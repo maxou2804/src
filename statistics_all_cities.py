@@ -12,7 +12,9 @@ data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzh
        '1/z': [0.58, 0.68, 0.58, 0.56, 0.72, 0.74, 0.76, 0.80, 0.54, 0.33, 0.27, 0.21, 0.25, 0.27, 0.74, 0.41, 0.54, 0.37, 0.52]})
 
 data = data.sort_values('City')
-directory = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\outputs_clusters'
+directory = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\render_report\\csv_outputs'
+
+output_dir='C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\render_report\\growth_correlation'
 
 # Set style
 sns.set_style("whitegrid")
@@ -200,8 +202,8 @@ results_text.append("CORRELATION ANALYSIS: GROWTH RATES vs SCALING COEFFICIENTS"
 results_text.append("="*80)
 results_text.append("")
 results_text.append(f"Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
-results_text.append(f"Number of cities analyzed (satellites): {len(merged_satellites)}")
-results_text.append(f"Number of cities analyzed (cluster 0): {len(merged_cluster0)}")
+results_text.append(f"Number of cities analyzed (Urban clusters): {len(merged_satellites)}")
+results_text.append(f"Number of cities analyzed (LCC): {len(merged_cluster0)}")
 results_text.append("")
 
 # ============================================================================
@@ -222,7 +224,7 @@ if len(merged_satellites) >= 3:
     print(f"  Pearson r = {pearson_sat:.4f}, p = {pearson_sat_p:.6f}")
     
     results_text.append("="*80)
-    results_text.append("1. SATELLITE CLUSTERS: MEAN GROWTH RATE vs BETA COEFFICIENT")
+    results_text.append("1. URBAN CLUSTERS: MEAN GROWTH RATE vs BETA COEFFICIENT")
     results_text.append("="*80)
     results_text.append("")
     results_text.append("Spearman Correlation:")
@@ -252,7 +254,7 @@ if len(merged_satellites) >= 3:
 # ============================================================================
 if len(merged_cluster0) >= 3:
     print("\n" + "-"*80)
-    print("CLUSTER 0 (LARGEST COMPONENT) ANALYSIS")
+    print("LCC ANALYSIS")
     print("-"*80)
     
     spearman_c0, spearman_c0_p = stats.spearmanr(merged_cluster0['cluster0_mean_growth_rate'], 
@@ -265,7 +267,7 @@ if len(merged_cluster0) >= 3:
     print(f"  Pearson r = {pearson_c0:.4f}, p = {pearson_c0_p:.6f}")
     
     results_text.append("="*80)
-    results_text.append("2. CLUSTER 0 (LARGEST COMPONENT): GROWTH RATE vs BETA COEFFICIENT")
+    results_text.append("2. LCC: GROWTH RATE vs BETA COEFFICIENT")
     results_text.append("="*80)
     results_text.append("")
     results_text.append("Spearman Correlation:")
@@ -413,7 +415,7 @@ if len(merged_cluster0) >= 3:
     print(f"  Pearson r = {pearson_c0_area_growth:.4f}, p = {pearson_c0_area_growth_p:.6f}")
     
     results_text.append("="*80)
-    results_text.append("6. CLUSTER 0 (LARGEST COMPONENT): INITIAL AREA vs GROWTH RATE")
+    results_text.append("6.LCC: INITIAL AREA vs GROWTH RATE")
     results_text.append("="*80)
     results_text.append("")
     results_text.append("Spearman Correlation:")
@@ -453,7 +455,7 @@ if len(merged_cluster0) >= 3:
     print(f"  Pearson r = {pearson_c0_final_area_growth:.4f}, p = {pearson_c0_final_area_growth_p:.6f}")
     
     results_text.append("="*80)
-    results_text.append("7. CLUSTER 0 (LARGEST COMPONENT): FINAL AREA vs GROWTH RATE")
+    results_text.append("7.LCC: FINAL AREA vs GROWTH RATE")
     results_text.append("="*80)
     results_text.append("")
     results_text.append("Spearman Correlation:")
@@ -492,7 +494,7 @@ full_merge = merged_satellites.merge(merged_cluster0[['City', 'cluster0_mean_gro
 
 results_text.append("City-wise data:")
 results_text.append("-" * 100)
-results_text.append(f"{'City':<20} {'Satellites Growth':>18} {'Cluster 0 Growth':>18} {'Beta':>10} {'Alpha':>10} {'1/z':>10}")
+results_text.append(f"{'City':<20} {'Urban clusters Growth':>18} {'LCC Growth':>18} {'Beta':>10} {'Alpha':>10} {'1/z':>10}")
 results_text.append("-" * 100)
 
 for _, row in full_merge.sort_values('mean_growth_rate', ascending=False).iterrows():
@@ -515,10 +517,10 @@ results_text.append("Spearman correlation: Non-parametric, rank-based correlatio
 results_text.append("Pearson correlation: Parametric, assumes linear relationship")
 results_text.append("")
 results_text.append("Cluster 0: The largest connected component (main urban core)")
-results_text.append("Satellites: All other clusters excluding cluster 0")
+results_text.append("Urban clusters: All other clusters excluding cluster 0")
 
 # Save to file
-with open('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\correlation_growth_vs_beta_complete.txt', 'w') as f:
+with open(f'{output_dir}\\correlation_growth_vs_beta_complete.txt', 'w') as f:
     f.write('\n'.join(results_text))
 
 
@@ -568,11 +570,11 @@ if len(merged_satellites) >= 3:
     stats_text += f'Spearman rho = {spearman_r:.4f} (p = {spearman_p:.4f})'
     ax1.text(0.05, 0.95, stats_text, transform=ax1.transAxes,
             fontsize=10, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     ax1.set_xlabel('Beta Coefficient (β)', fontsize=12, fontweight='bold')
-    ax1.set_ylabel('Mean Growth Rate (Satellites)', fontsize=12, fontweight='bold')
-    ax1.set_title('Satellite Clusters: Average Growth Rate vs Beta Coefficient', 
+    ax1.set_ylabel('Mean Growth Rate (Urban clusters)', fontsize=12, fontweight='bold')
+    ax1.set_title('Urban Clusters: Average Growth Rate vs Beta Coefficient', 
                  fontsize=14, fontweight='bold', pad=20)
     ax1.grid(True, alpha=0.3, linestyle='--')
     ax1.legend()
@@ -614,8 +616,8 @@ if len(merged_cluster0) >= 3:
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
     ax2.set_xlabel('Beta Coefficient (β)', fontsize=12, fontweight='bold')
-    ax2.set_ylabel('Mean Growth Rate (Largest Component)', fontsize=12, fontweight='bold')
-    ax2.set_title('Largest Component (Cluster 0): Growth Rate vs Beta Coefficient', 
+    ax2.set_ylabel('Mean Growth Rate (LCC)', fontsize=12, fontweight='bold')
+    ax2.set_title('LCC: Growth Rate vs Beta Coefficient', 
                  fontsize=14, fontweight='bold', pad=20)
     ax2.grid(True, alpha=0.3, linestyle='--')
     ax2.legend()
@@ -623,7 +625,7 @@ if len(merged_cluster0) >= 3:
 plt.tight_layout()
 
 # Save the figure
-output_path = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\growth_rate_vs_beta_correlation.png'
+output_path = f'{output_dir}\\growth_rate_vs_beta_correlation.png'
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 print(f"\n✓ Growth rate vs beta visualization saved to: {output_path}")
 
@@ -643,46 +645,221 @@ fig_area, axes_area = plt.subplots(1, 2, figsize=(16, 6))
 # ============================================================================
 # Plot 1: Satellite Clusters Area vs Growth Rate
 # ============================================================================
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from scipy import stats
+
+# Assuming merged_satellites dataframe is already created with columns:
+# 'City', 'mean_area', 'mean_growth_rate'
+
+# Function to add city labels with minimal overlap (from your example)
+def add_city_labels(ax, x_data, y_data, cities, fontsize=10):
+    """Add city labels to points with basic offset to reduce overlap"""
+    for i, (x, y, city) in enumerate(zip(x_data, y_data, cities)):
+        # Simple offset pattern to reduce overlap
+        if i % 4 == 0:
+            ha, va = 'left', 'bottom'
+            offset_x, offset_y = 0.01, 0.01
+        elif i % 4 == 1:
+            ha, va = 'right', 'top'
+            offset_x, offset_y = -0.01, -0.01
+        elif i % 4 == 2:
+            ha, va = 'left', 'top'
+            offset_x, offset_y = 0.01, -0.01
+        else:
+            ha, va = 'right', 'bottom'
+            offset_x, offset_y = -0.01, 0.01
+        
+        # Normalize offsets based on data range
+        x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+        y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+        
+        ax.annotate(city, xy=(x, y), 
+                   xytext=(x + offset_x * x_range, y + offset_y * y_range),
+                   fontsize=fontsize, ha=ha, va=va,
+                   arrowprops=dict(arrowstyle='-', lw=0.5, color='gray', alpha=0.5))
+
+# Main plotting code
 if len(merged_satellites) >= 3:
-    ax1 = axes_area[0]
+    # Create figure with specified size
+    fig, ax1 = plt.subplots(figsize=(14, 8))
     
-    # Scatter plot
-    ax1.scatter(merged_satellites['mean_area'], 
-                merged_satellites['mean_growth_rate'], 
-                s=100, alpha=0.6, c='steelblue', edgecolors='black', linewidth=1)
+    # Create a color map for cities using tab20 (same as your example)
+    n_cities = len(merged_satellites)
+    colors = cm.tab20(np.linspace(0, 1, n_cities))
     
-    # Add city labels
-    for idx, row in merged_satellites.iterrows():
-        ax1.annotate(row['City'], 
-                    (row['mean_area'], row['mean_growth_rate']),
-                    xytext=(5, 5), textcoords='offset points',
-                    fontsize=8, alpha=0.7)
+    # Create a consistent color dictionary for each city
+    city_colors = {city: colors[i] for i, city in enumerate(merged_satellites['City'])}
+    
+    # Plot points with different colors for each city
+    for city in merged_satellites['City']:
+        city_data = merged_satellites[merged_satellites['City'] == city]
+        ax1.scatter(city_data['mean_area'], 
+                   city_data['mean_growth_rate'], 
+                   color=city_colors[city], 
+                   s=100, 
+                   label=city, 
+                   edgecolors='black', 
+                   linewidth=0.5)
+    
+    # Fit and plot regression line (dashed black line like in your example)
+    z = np.polyfit(merged_satellites['mean_area'], merged_satellites['mean_growth_rate'], 1)
+    p = np.poly1d(z)
+    x_line = np.linspace(merged_satellites['mean_area'].min(), 
+                        merged_satellites['mean_area'].max(), 100)
+    ax1.plot(x_line, p(x_line), '--', color='black', 
+            alpha=0.7, linewidth=2, 
+            label=f'Linear fit: y={z[0]:.2f}x + {z[1]:.2f}')
+    
+    # Add city labels using the same function as your example
+    add_city_labels(ax1, merged_satellites['mean_area'], 
+                   merged_satellites['mean_growth_rate'], 
+                   merged_satellites['City'])
+    
+    # Calculate correlation statistics
+    pearson_r, pearson_p = stats.pearsonr(merged_satellites['mean_area'], 
+                                          merged_satellites['mean_growth_rate'])
+    spearman_r, spearman_p = stats.spearmanr(merged_satellites['mean_area'], 
+                                             merged_satellites['mean_growth_rate'])
+    
+    # Add correlation statistics text box (matching your example style)
+    textstr = f'Pearson r = {pearson_r:.2f} (p = {pearson_p:.2f})\n' + \
+              f'Spearman ρ = {spearman_r:.2f} (p = {spearman_p:.2f})'
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+    ax1.text(0.02, 0.98, textstr, transform=ax1.transAxes, fontsize=11,
+            verticalalignment='top', bbox=props)
+    
+    # Set labels and title
+    ax1.set_xlabel('Mean Area (km²)', fontsize=12)
+    ax1.set_ylabel('Mean Growth Rate', fontsize=12)
+    ax1.set_title('Urban Clusters: Mean Area vs Mean Growth Rate', 
+                 fontsize=14, fontweight='bold')
+    
+    # Add grid (matching your example)
+    ax1.grid(True, alpha=0.3)
+    
+    # Legend can be added or commented out based on preference
+    # If you want the legend like in some of your plots:
+    # ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
+    # Or without legend for cleaner look (as in some of your examples):
+    # Comment out the legend
+    
+    # Use tight layout
+    plt.tight_layout()
+    
+    # Save figure with high DPI
+    plt.savefig('urban_clusters_area_vs_growth_styled.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# Alternative version without individual city legend for cleaner visualization
+if len(merged_satellites) >= 3:
+    fig, ax1 = plt.subplots(figsize=(14, 8))
+    
+    # Create color map
+    n_cities = len(merged_satellites)
+    colors = cm.tab20(np.linspace(0, 1, n_cities))
+    city_colors = {city: colors[i] for i, city in enumerate(merged_satellites['City'])}
+    
+    # Plot all points with different colors (no individual labels)
+    for i, (idx, row) in enumerate(merged_satellites.iterrows()):
+        ax1.scatter(row['mean_area'], 
+                   row['mean_growth_rate'], 
+                   color=colors[i], 
+                   s=100, 
+                   edgecolors='black', 
+                   linewidth=0.5)
     
     # Fit and plot regression line
     z = np.polyfit(merged_satellites['mean_area'], merged_satellites['mean_growth_rate'], 1)
     p = np.poly1d(z)
-    x_line = np.linspace(merged_satellites['mean_area'].min(), merged_satellites['mean_area'].max(), 100)
-    ax1.plot(x_line, p(x_line), "r--", alpha=0.8, linewidth=2, label=f'Linear fit')
+    x_line = np.linspace(merged_satellites['mean_area'].min(), 
+                        merged_satellites['mean_area'].max(), 100)
+    ax1.plot(x_line, p(x_line), '--', color='black', 
+            alpha=0.7, linewidth=2)
     
-    # Add correlation statistics to plot
+    # Add city labels
+    add_city_labels(ax1, merged_satellites['mean_area'], 
+                   merged_satellites['mean_growth_rate'], 
+                   merged_satellites['City'], fontsize=10)
+    
+    # Calculate and display correlation statistics
     pearson_r, pearson_p = stats.pearsonr(merged_satellites['mean_area'], 
-                                           merged_satellites['mean_growth_rate'])
+                                          merged_satellites['mean_growth_rate'])
     spearman_r, spearman_p = stats.spearmanr(merged_satellites['mean_area'], 
-                                              merged_satellites['mean_growth_rate'])
+                                             merged_satellites['mean_growth_rate'])
     
-    stats_text = f'Pearson r = {pearson_r:.4f} (p = {pearson_p:.4f})\n'
-    stats_text += f'Spearman rho = {spearman_r:.4f} (p = {spearman_p:.4f})'
-    ax1.text(0.05, 0.95, stats_text, transform=ax1.transAxes,
-            fontsize=10, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    textstr = f'Pearson r = {pearson_r:.2f} (p = {pearson_p:.2f})\n' + \
+              f'Spearman ρ = {spearman_r:.2f} (p = {spearman_p:.2f})'
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+    ax1.text(0.02, 0.98, textstr, transform=ax1.transAxes, fontsize=11,
+            verticalalignment='top', bbox=props)
     
-    ax1.set_xlabel('Mean Area (km²)', fontsize=12, fontweight='bold')
-    ax1.set_ylabel('Mean Growth Rate (Satellites)', fontsize=12, fontweight='bold')
-    ax1.set_title('Satellite Clusters: Area vs Growth Rate', 
-                 fontsize=14, fontweight='bold', pad=20)
-    ax1.grid(True, alpha=0.3, linestyle='--')
-    ax1.legend()
+    # Set labels and title
+    ax1.set_xlabel('Mean Area (km²)', fontsize=12)
+    ax1.set_ylabel('Mean Growth Rate', fontsize=12)
+    ax1.set_title('Urban Clusters: Mean Area vs Mean Growth Rate', 
+                 fontsize=14, fontweight='bold')
+    
+    # Add grid
+    ax1.grid(True, alpha=0.3)
+    
+    # Add linear fit equation to the plot
+    equation_text = f'Linear fit: y = {z[0]:.4f}x + {z[1]:.4f}'
+    ax1.text(0.98, 0.02, equation_text, transform=ax1.transAxes, fontsize=10,
+            horizontalalignment='right', verticalalignment='bottom',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.savefig('urban_clusters_area_vs_growth_clean.png', dpi=300, bbox_inches='tight')
+    plt.show()
 
+# Print correlation statistics to console
+if len(merged_satellites) >= 3:
+    print("\n" + "="*80)
+    print("URBAN CLUSTERS: AREA VS GROWTH RATE CORRELATION ANALYSIS")
+    print("="*80)
+    
+    pearson_r, pearson_p = stats.pearsonr(merged_satellites['mean_area'], 
+                                          merged_satellites['mean_growth_rate'])
+    spearman_r, spearman_p = stats.spearmanr(merged_satellites['mean_area'], 
+                                             merged_satellites['mean_growth_rate'])
+    
+    print("\nPEARSON CORRELATION:")
+    print(f"  Correlation coefficient (r): {pearson_r:.4f}")
+    print(f"  P-value: {pearson_p:.4f}")
+    
+    print("\nSPEARMAN CORRELATION:")
+    print(f"  Correlation coefficient (ρ): {spearman_r:.4f}")
+    print(f"  P-value: {spearman_p:.4f}")
+    
+    # Interpret correlation
+    abs_r = abs(spearman_r)
+    if abs_r < 0.20:
+        strength = "Very weak"
+    elif abs_r < 0.40:
+        strength = "Weak"
+    elif abs_r < 0.60:
+        strength = "Moderate"
+    elif abs_r < 0.80:
+        strength = "Strong"
+    else:
+        strength = "Very strong"
+    
+    direction = "positive" if spearman_r > 0 else "negative"
+    
+    if spearman_p < 0.001:
+        significance = "highly significant (p < 0.001)"
+    elif spearman_p < 0.01:
+        significance = "very significant (p < 0.01)"
+    elif spearman_p < 0.05:
+        significance = "significant (p < 0.05)"
+    else:
+        significance = "not significant (p ≥ 0.05)"
+    
+    print(f"\nInterpretation: {strength} {direction} correlation, {significance}")
+    print("="*80)
 # ============================================================================
 # Plot 2: Cluster 0 Initial Area vs Growth Rate
 # ============================================================================
@@ -714,15 +891,15 @@ if len(merged_cluster0) >= 3:
     spearman_r, spearman_p = stats.spearmanr(merged_cluster0['cluster0_initial_area'], 
                                               merged_cluster0['cluster0_mean_growth_rate'])
     
-    stats_text = f'Pearson r = {pearson_r:.4f} (p = {pearson_p:.4f})\n'
-    stats_text += f'Spearman rho = {spearman_r:.4f} (p = {spearman_p:.4f})'
+    stats_text = f'Pearson r = {pearson_r:.2f} (p = {pearson_p:.2f})\n'
+    stats_text += f'Spearman rho = {spearman_r:.2f} (p = {spearman_p:.2f})'
     ax2.text(0.05, 0.95, stats_text, transform=ax2.transAxes,
             fontsize=10, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     ax2.set_xlabel('Initial Area (km²)', fontsize=12, fontweight='bold')
-    ax2.set_ylabel('Mean Growth Rate (Largest Component)', fontsize=12, fontweight='bold')
-    ax2.set_title('Largest Component (Cluster 0): Initial Area vs Growth Rate', 
+    ax2.set_ylabel('Mean Growth Rate (LCC)', fontsize=12, fontweight='bold')
+    ax2.set_title('LCC : Initial Area vs Growth Rate', 
                  fontsize=14, fontweight='bold', pad=20)
     ax2.grid(True, alpha=0.3, linestyle='--')
     ax2.legend()
@@ -730,7 +907,7 @@ if len(merged_cluster0) >= 3:
 plt.tight_layout()
 
 # Save the figure
-output_path_area = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\area_vs_growth_rate_correlation.png'
+output_path_area = f'{output_dir}\\area_vs_growth_rate_correlation.png'
 plt.savefig(output_path_area, dpi=300, bbox_inches='tight')
 print(f"\n✓ Area vs growth rate visualization saved to: {output_path_area}")
 
@@ -741,11 +918,11 @@ plt.show()
 print("\n✓ Complete correlation analysis saved to: correlation_growth_vs_beta_complete.txt")
 
 # Save merged datasets
-full_merge.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\city_stats_complete_with_coefficients.csv', 
+full_merge.to_csv(f'{output_dir}\\city_stats_complete_with_coefficients.csv', 
                  index=False)
 print("✓ Complete city statistics with coefficients saved")
 
-cluster0_stats_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\cluster0_statistics.csv', 
+cluster0_stats_df.to_csv(f'{output_dir}\\cluster0_statistics.csv', 
                         index=False)
 print("✓ Cluster 0 statistics saved")
 
@@ -757,11 +934,11 @@ print("\n" + "="*80)
 print("Generating comprehensive combined plot...")
 # [Previous plotting code continues...]
 
-all_growth_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\combined_growth_data_all_cities.csv', 
+all_growth_df.to_csv(f'{output_dir}\\combined_growth_data_all_cities.csv', 
                     index=False)
-all_trajectories_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\combined_trajectories_all_cities.csv', 
+all_trajectories_df.to_csv(f'{output_dir}\\combined_trajectories_all_cities.csv', 
                            index=False)
-city_stats_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\city_statistics.csv', 
+city_stats_df.to_csv(f'{output_dir}\\city_statistics.csv', 
                     index=False)
 
 
@@ -860,22 +1037,8 @@ if len(merged_both_growth) > 1:
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9, edgecolor='black', linewidth=2),
             family='monospace')
     
-    # Add interpretation text
-    if pearson_p < 0.05:
-        if pearson_r > 0:
-            interpretation = 'Interpretation: Cities with faster-growing\nsatellites also have faster-growing urban cores'
-            color_interp = 'lightgreen'
-        else:
-            interpretation = 'Interpretation: Cities with faster-growing\nsatellites have slower-growing urban cores'
-            color_interp = 'lightcoral'
-    else:
-        interpretation = 'Interpretation: No significant relationship\nbetween satellite and core growth rates'
-        color_interp = 'lightgray'
-    
-    ax.text(0.98, 0.02, interpretation, transform=ax.transAxes,
-            fontsize=10, verticalalignment='bottom', horizontalalignment='right',
-            bbox=dict(boxstyle='round', facecolor=color_interp, alpha=0.8, edgecolor='black', linewidth=1.5),
-            style='italic', weight='bold')
+   
+
 
 # Add reference lines
 ax.axhline(y=0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
@@ -888,8 +1051,8 @@ x_range = [min(merged_both_growth['mean_growth_rate'].min(),
                merged_both_growth['cluster0_mean_growth_rate'].max())]
 ax.plot(x_range, x_range, 'k:', alpha=0.3, linewidth=2, label='y = x (equal growth)')
 
-ax.set_xlabel('Satellite Clusters Mean Growth Rate', fontsize=14, fontweight='bold')
-ax.set_ylabel('Largest Component (Cluster 0) Mean Growth Rate', fontsize=14, fontweight='bold')
+ax.set_xlabel('Urban Clusters Mean Growth Rate', fontsize=14, fontweight='bold')
+ax.set_ylabel('LCC Mean Growth Rate', fontsize=14, fontweight='bold')
 ax.set_title('Relationship Between Satellite and Core Growth Rates\n(Each Point Represents One City)', 
              fontsize=16, fontweight='bold', pad=20)
 ax.grid(True, alpha=0.3, linestyle='--')
@@ -900,7 +1063,7 @@ ax.grid(True, alpha=0.3, linestyle='--')
 plt.tight_layout()
 
 # Save the figure
-output_path_growth_correlation = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\satellite_vs_core_growth_correlation.png'
+output_path_growth_correlation = f'{output_dir}\\satellite_vs_core_growth_correlation.png'
 plt.savefig(output_path_growth_correlation, dpi=300, bbox_inches='tight')
 print(f"\n✓ Satellite vs Core growth correlation plot saved to: {output_path_growth_correlation}")
 
@@ -910,7 +1073,7 @@ plt.show()
 # ADD TO TEXT FILE RESULTS
 # ============================================================================
 print("\n" + "="*80)
-print("CORRELATION: SATELLITE GROWTH vs CLUSTER 0 GROWTH")
+print("CORRELATION: URBAN CLUSTERS GROWTH vs CLUSTER 0 GROWTH")
 print("="*80)
 
 if len(merged_both_growth) > 1:
@@ -938,7 +1101,7 @@ if len(merged_both_growth) > 1:
     additional_results = []
     additional_results.append("")
     additional_results.append("="*80)
-    additional_results.append("8. SATELLITE GROWTH RATE vs CLUSTER 0 GROWTH RATE")
+    additional_results.append("8. URBAN CLUSTERS GROWTH RATE vs  LCC GROWTH RATE")
     additional_results.append("="*80)
     additional_results.append("")
     additional_results.append(f"Number of cities analyzed: {len(merged_both_growth)}")
@@ -983,7 +1146,7 @@ if len(merged_both_growth) > 1:
     print(f"\n✓ Correlation results appended to: correlation_growth_vs_beta_complete.txt")
 
 # Save the merged data
-merged_both_growth.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\satellite_vs_core_growth_data.csv', 
+merged_both_growth.to_csv(f'{output_dir}\\satellite_vs_core_growth_data.csv', 
                           index=False)
 print("✓ Satellite vs Core growth data saved")
 
@@ -1059,13 +1222,13 @@ for idx, city in enumerate(cities):
     # Plot cluster 0 (largest component)
     ax.plot(city_data['year'], city_data['cluster0_area'], 
             marker='o', linewidth=2.5, markersize=8, 
-            color='#2E86AB', label='Largest Component (Cluster 0)',
+            color='#2E86AB', label='Largest Connected Component (Cluster 0)',
             alpha=0.8)
     
     # Plot satellites total
     ax.plot(city_data['year'], city_data['satellites_area'], 
             marker='s', linewidth=2.5, markersize=8, 
-            color='#A23B72', label='All Satellites (Combined)',
+            color='#A23B72', label='All Urban Clusters (Combined)',
             alpha=0.8)
     
     # Plot total urban area
@@ -1105,12 +1268,12 @@ for idx, city in enumerate(cities):
 for idx in range(n_cities, len(axes)):
     axes[idx].axis('off')
 
-plt.suptitle('Urban Area Evolution Over Time: Core vs Satellites\n(All Cities)', 
+plt.suptitle('Urban Area Evolution Over Time: Core vs Urban Clusters\n(All Cities)', 
              fontsize=18, fontweight='bold', y=0.995)
 plt.tight_layout(rect=[0, 0, 1, 0.99])
 
 # Save the figure
-output_path_evolution = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\urban_area_evolution_all_cities.png'
+output_path_evolution =f'{output_dir}\\urban_area_evolution_all_cities.png'
 plt.savefig(output_path_evolution, dpi=300, bbox_inches='tight')
 print(f"\n✓ Urban area evolution plot saved to: {output_path_evolution}")
 
@@ -1125,7 +1288,7 @@ print("Generating individual high-resolution plots for each city...")
 print("="*80)
 
 # Create output directory for individual plots
-individual_plots_dir = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\individual_city_evolution'
+individual_plots_dir = f'{output_dir}\\individual_city_evolution'
 os.makedirs(individual_plots_dir, exist_ok=True)
 
 for city in cities:
@@ -1137,13 +1300,13 @@ for city in cities:
     # Plot cluster 0 (largest component)
     line1 = ax.plot(city_data['year'], city_data['cluster0_area'], 
                     marker='o', linewidth=3, markersize=10, 
-                    color='#2E86AB', label='Largest Component (Cluster 0)',
+                    color='#2E86AB', label='LCC',
                     alpha=0.8, zorder=3)
     
     # Plot satellites total
     line2 = ax.plot(city_data['year'], city_data['satellites_area'], 
                     marker='s', linewidth=3, markersize=10, 
-                    color='#A23B72', label='All Satellites (Combined)',
+                    color='#A23B72', label='All Urban Clusters (Combined)',
                     alpha=0.8, zorder=3)
     
     # Plot total urban area
@@ -1186,10 +1349,10 @@ for city in cities:
         stats_text += f'  {initial_total:.2f} → {final_total:.2f} km²\n'
         stats_text += f'  +{total_growth:.1f}% total\n'
         stats_text += f'  {total_growth_annual:.2f}% per year\n\n'
-        stats_text += f'Core (Cluster 0):\n'
+        stats_text += f'  LCC:\n'
         stats_text += f'  Growth: +{cluster0_growth:.1f}%\n'
         stats_text += f'  Final share: {cluster0_pct_final:.1f}%\n\n'
-        stats_text += f'Satellites:\n'
+        stats_text += f'  Urban Clusters:\n'
         stats_text += f'  Growth: +{satellites_growth:.1f}%\n'
         stats_text += f'  Final share: {satellites_pct_final:.1f}%'
         
@@ -1220,7 +1383,7 @@ print(f"\n✓ Individual city plots saved to: {individual_plots_dir}")
 # ============================================================================
 # SAVE AREA EVOLUTION DATA
 # ============================================================================
-area_evolution_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\urban_area_evolution_data.csv', 
+area_evolution_df.to_csv(f'{output_dir}\\urban_area_evolution_data.csv', 
                         index=False)
 print("\n✓ Urban area evolution data saved to: urban_area_evolution_data.csv")
 
@@ -1348,7 +1511,7 @@ if len(growth_distance_df) > 2:
             growth_distance_clean['avg_growth_rate']
         )
         
-        print(f"\nSatellite Growth Rate vs Normalized Distance:")
+        print(f"Urban Clusters Growth Rate vs Normalized Distance:")
         print(f"  Spearman rho = {spearman_r:.4f}, p = {spearman_p:.6f}")
         print(f"  Pearson r = {pearson_r:.4f}, p = {pearson_p:.6f}")
         
@@ -1356,7 +1519,7 @@ if len(growth_distance_df) > 2:
         distance_results = []
         distance_results.append("")
         distance_results.append("="*80)
-        distance_results.append("9. SATELLITE CLUSTERS: GROWTH RATE vs NORMALIZED RADIAL DISTANCE")
+        distance_results.append("9. URBAN CLUSTERS CLUSTERS: GROWTH RATE vs NORMALIZED RADIAL DISTANCE")
         distance_results.append("="*80)
         distance_results.append("")
         distance_results.append(f"Number of satellite clusters: {len(growth_distance_clean)}")
@@ -1392,7 +1555,7 @@ if len(growth_distance_df) > 2:
         distance_results.append("")
         
         # Append to existing results file
-        results_file_path = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\correlation_growth_vs_beta_complete.txt'
+        results_file_path = f'{output_dir}\\correlation_growth_vs_beta_complete.txt'
         with open(results_file_path, 'r') as f:
             existing_content = f.read()
         
@@ -1481,31 +1644,17 @@ if len(growth_distance_clean) > 2:
                      edgecolor='black', linewidth=2),
             family='monospace')
     
-    # Add interpretation text
-    if pearson_p < 0.05:
-        if pearson_r > 0:
-            interpretation = 'Farther satellites grow FASTER\n(Peripheral expansion)'
-            color_interp = 'lightgreen'
-        else:
-            interpretation = 'Farther satellites grow SLOWER\n(Core-concentrated growth)'
-            color_interp = 'lightcoral'
-    else:
-        interpretation = 'No significant distance effect\non growth rate'
-        color_interp = 'lightgray'
+   
     
-    ax.text(0.02, 0.98, interpretation, transform=ax.transAxes,
-            fontsize=12, verticalalignment='top', horizontalalignment='left',
-            bbox=dict(boxstyle='round', facecolor=color_interp, alpha=0.8, 
-                     edgecolor='black', linewidth=2),
-            style='italic', weight='bold')
+   
     
     # Add zero growth reference line
     ax.axhline(y=0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
     
     ax.set_xlabel('Normalized Radial Distance\n(Distance / √Cluster0_Area_2014)', 
                   fontsize=14, fontweight='bold')
-    ax.set_ylabel('Satellite Cluster Average Growth Rate', fontsize=14, fontweight='bold')
-    ax.set_title('Satellite Cluster Growth Rate vs Distance from Urban Core\n(All Clusters from All Cities)', 
+    ax.set_ylabel('Urban Cluster Average Growth Rate', fontsize=14, fontweight='bold')
+    ax.set_title('Urban Cluster Growth Rate vs Distance from Urban Core\n(All Clusters from All Cities)', 
                  fontsize=16, fontweight='bold', pad=20)
     ax.grid(True, alpha=0.3, linestyle='--')
     
@@ -1516,7 +1665,7 @@ if len(growth_distance_clean) > 2:
     plt.tight_layout()
     
     # Save the figure
-    output_path_radial = 'C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\satellite_growth_vs_normalized_distance.png'
+    output_path_radial = f'{output_dir}\\satellite_growth_vs_normalized_distance.png'
     plt.savefig(output_path_radial, dpi=300, bbox_inches='tight')
     print(f"\n✓ Satellite growth rate vs normalized distance plot saved to: {output_path_radial}")
     
@@ -1525,7 +1674,7 @@ if len(growth_distance_clean) > 2:
     # ========================================================================
     # SAVE DATA
     # ========================================================================
-    growth_distance_clean.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\satellite_growth_distance_data.csv', 
+    growth_distance_clean.to_csv(f'{output_dir}\\satellite_growth_distance_data.csv', 
                            index=False)
     print("✓ Satellite growth rate-distance data saved")
     
@@ -1581,7 +1730,7 @@ if len(growth_distance_clean) > 2:
     # Save city-specific correlations
     if len(city_correlations) > 0:
         city_corr_df = pd.DataFrame(city_correlations)
-        city_corr_df.to_csv('C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\src_EDEN\\powerlaw\\city_specific_growth_distance_correlations.csv', 
+        city_corr_df.to_csv(f'{output_dir}\\city_specific_growth_distance_correlations.csv', 
                            index=False)
         print("\n✓ City-specific growth-distance correlations saved")
     
@@ -1644,36 +1793,7 @@ for city in cities:
 print("\n" + "="*80)
 print("Area evolution analysis complete!")
 print("="*80)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 print("="*80)
-
 print("\n" + "="*80)
-
-
-
-
-
-
-
-
-
 print("ANALYSIS COMPLETE")
 print("="*80)

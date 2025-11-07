@@ -13,7 +13,7 @@ output_directory="outputs_evolution"
 for name in cities:
 
     year=1985
-    radius_factor=2.0
+    radius_factor=4.0
 
 
     # Download and load data
@@ -23,18 +23,18 @@ for name in cities:
     analyzer = BuiltAreaAnalyzer()
     data, metadata = analyzer.load_tiles_from_download_result(results)
 
-    # Track evolution (FAST - 8-10× speedup!)
-    tracker = ClusterEvolutionTracker(
-        analyzer, 
-        n_clusters=10,
-        radius_factor=radius_factor # NEW! Focus on specific region
-    )
-    tracker.export_evolution_csv(data, f"output_{name}.csv")
+    # # Track evolution (FAST - 8-10× speedup!)
+    # tracker = ClusterEvolutionTracker(
+    #     analyzer, 
+    #     n_clusters=10,
+    #     radius_factor=radius_factor # NEW! Focus on specific region
+    # )
+    # tracker.export_evolution_csv(data, f"output_{name}.csv")
 
     # Visualize (NEW!)
     stats = visualize_clusters_optimized(
         wsf_data=data, analyzer=analyzer, year=year,
-        radius_factor=radius_factor, n_clusters=10,crop_factor=1.5,dpi=500,
+        radius_factor=radius_factor, n_clusters=10,dpi=900,show_circle=False,crop_factor=1,
         output_path=f"clusters_{name}_{year}.png"
     )
 

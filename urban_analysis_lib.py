@@ -656,7 +656,7 @@ class ClusterEvolutionTracker:
         self.analyzer = analyzer
         self.n_clusters = n_clusters
         self.radius_factor = radius_factor
-        self.years = list(range(1985, 2015))
+        self.years = list(range(1985, 2016))
         self.pixel_area_km2 = (30 * 30) / 1e6
         self.pixel_size_km = 0.03
     
