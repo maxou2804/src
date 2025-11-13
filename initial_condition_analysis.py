@@ -7,6 +7,14 @@ from scipy import stats
 from datetime import datetime
 import matplotlib.cm as cm
 
+# Try to import adjustText for better label placement
+try:
+    from adjustText import adjust_text
+    HAS_ADJUST_TEXT = True
+except ImportError:
+    HAS_ADJUST_TEXT = False
+    print("adjustText not installed. Using custom label placement. Install with: pip install adjustText")
+
 ratio_collection=[]
 radius_collection=[]
 rate_collection=[]
@@ -28,7 +36,7 @@ for filename in os.listdir(directory):
         area_init=df.loc[df['year'] == 1985,'area_km2']
         area_finit=df.loc[ df['year'] == 2014, 'area_km2']
         
-        rate=(area_finit[290]-area_init[0])/area_init[0]
+        rate=(((area_finit[290]/area_init[0]))**(1/30)-1)*100
         radius=df.loc[df['year'] == 1985,'radial_distance_km']
         rate_collection.append(rate)
         
@@ -67,32 +75,131 @@ pearson_p_ratio = stats.pearsonr(data['ratio_1985'],data['beta'])[1]
 pearson_p_bonus = stats.pearsonr(data['radius_1985'],data['ratio_1985'])[1]
 pearson_p_rate = stats.pearsonr(data['LCC_growth _rate'],data['beta'])[1]
 
-# Function to add labels with minimal overlap
-def add_city_labels(ax, x_data, y_data, cities, fontsize=10):
-    """Add city labels to points with basic offset to reduce overlap"""
-    for i, (x, y, city) in enumerate(zip(x_data, y_data, cities)):
-        # Simple offset pattern to reduce overlap
-        if i % 4 == 0:
-            ha, va = 'left', 'bottom'
-            offset_x, offset_y = 0.01, 0.01
-        elif i % 4 == 1:
-            ha, va = 'right', 'top'
-            offset_x, offset_y = -0.01, -0.01
-        elif i % 4 == 2:
-            ha, va = 'left', 'top'
-            offset_x, offset_y = 0.01, -0.01
-        else:
-            ha, va = 'right', 'bottom'
-            offset_x, offset_y = -0.01, 0.01
+def add_city_labels_with_adjusttext(ax, x_data, y_data, cities, fontsize=9):
+    """Add city labels using adjustText library for automatic overlap avoidance"""
+    texts = []
+    for x, y, city in zip(x_data, y_data, cities):
+        texts.append(ax.annotate(city, xy=(x, y), fontsize=fontsize))
+    
+    # Adjust text positions to minimize overlaps
+    adjust_text(texts, 
+                x=x_data, y=y_data,
+                arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, alpha=0.5),
+                ha='center', va='center',
+                force_text=(0.3, 0.5),  # Force to push texts apart
+                expand_text=(1.2, 1.5),  # Expand text bounding boxes
+                expand_points=(1.2, 1.2))  # Expand point bounding boxes
+
+def add_city_labels_custom(ax, x_data, y_data, cities, fontsize=9):
+    """Custom label placement with collision detection to minimize overlap"""
+    
+    # Get axis limits for scaling
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    x_range = xlim[1] - xlim[0]
+    y_range = ylim[1] - ylim[0]
+    
+    # Store placed labels for collision detection
+    placed_labels = []
+    
+    # Define possible offset directions (8 directions + center)
+    offset_directions = [
+        (0.02, 0.02),    # top-right
+        (-0.02, 0.02),   # top-left
+        (0.02, -0.02),   # bottom-right
+        (-0.02, -0.02),  # bottom-left
+        (0.03, 0),       # right
+        (-0.03, 0),      # left
+        (0, 0.03),       # top
+        (0, -0.03),      # bottom
+        (0.04, 0.01),    # far top-right
+        (-0.04, 0.01),   # far top-left
+        (0.04, -0.01),   # far bottom-right
+        (-0.04, -0.01),  # far bottom-left
+    ]
+    
+    def get_text_bbox(x, y, text, fontsize):
+        """Estimate bounding box for text (simplified)"""
+        # Rough estimation: each character is about 0.01 * x_range wide
+        width = len(text) * 0.008 * x_range
+        height = 0.02 * y_range
+        return (x - width/2, y - height/2, x + width/2, y + height/2)
+    
+    def check_overlap(bbox1, bbox2):
+        """Check if two bounding boxes overlap"""
+        return not (bbox1[2] < bbox2[0] or bbox1[0] > bbox2[2] or 
+                   bbox1[3] < bbox2[1] or bbox1[1] > bbox2[3])
+    
+    # Sort cities by their y-position to process from bottom to top
+    sorted_indices = np.argsort(y_data)
+    
+    for idx in sorted_indices:
+        x, y, city = x_data[idx], y_data[idx], cities[idx]
         
-        # Normalize offsets based on data range
-        x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-        y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+        best_offset = None
+        min_overlaps = float('inf')
         
-        ax.annotate(city, xy=(x, y), 
-                   xytext=(x + offset_x * x_range, y + offset_y * y_range),
-                   fontsize=fontsize, ha=ha, va=va,
-                   arrowprops=dict(arrowstyle='-', lw=0.5, color='gray', alpha=0.5))
+        # Try each offset direction
+        for offset_x, offset_y in offset_directions:
+            # Calculate actual offset based on data range
+            actual_offset_x = offset_x * x_range
+            actual_offset_y = offset_y * y_range
+            
+            # Calculate text position
+            text_x = x + actual_offset_x
+            text_y = y + actual_offset_y
+            
+            # Get bounding box for this position
+            text_bbox = get_text_bbox(text_x, text_y, city, fontsize)
+            
+            # Count overlaps with already placed labels
+            overlaps = 0
+            for placed_bbox in placed_labels:
+                if check_overlap(text_bbox, placed_bbox):
+                    overlaps += 1
+            
+            # Update best position if this has fewer overlaps
+            if overlaps < min_overlaps:
+                min_overlaps = overlaps
+                best_offset = (actual_offset_x, actual_offset_y, text_x, text_y, text_bbox)
+                if overlaps == 0:
+                    break  # Found perfect position
+        
+        # Place label at best position
+        if best_offset:
+            offset_x, offset_y, text_x, text_y, text_bbox = best_offset
+            
+            # Determine text alignment based on offset direction
+            if offset_x > 0:
+                ha = 'left'
+            elif offset_x < 0:
+                ha = 'right'
+            else:
+                ha = 'center'
+            
+            if offset_y > 0:
+                va = 'bottom'
+            elif offset_y < 0:
+                va = 'top'
+            else:
+                va = 'center'
+            
+            # Add the annotation
+            ax.annotate(city, xy=(x, y), 
+                       xytext=(text_x, text_y),
+                       fontsize=fontsize, ha=ha, va=va,
+                       arrowprops=dict(arrowstyle='-', lw=0.5, color='gray', alpha=0.3))
+            
+            # Store the bounding box
+            placed_labels.append(text_bbox)
+
+# Choose which labeling function to use
+if HAS_ADJUST_TEXT:
+    add_city_labels = add_city_labels_with_adjusttext
+    print("Using adjustText for optimal label placement")
+else:
+    add_city_labels = add_city_labels_custom
+    print("Using custom label placement algorithm")
 
 # PLOT 1: Ratio vs Beta
 plt.figure(figsize=(14, 8))
@@ -122,7 +229,6 @@ plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
 plt.xlabel(r"$\varphi_{area}$", fontsize=12)
 plt.ylabel(r"$\beta$", fontsize=12)
 plt.title(r"Correlation: $\varphi_{area}$ vs $\beta$", fontsize=14, fontweight='bold')
-# plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig('ratio_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
@@ -156,7 +262,6 @@ plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
 plt.xlabel( r"$\bar{r}_{clusters}$", fontsize=12)
 plt.ylabel(r"$\beta$", fontsize=12)
 plt.title(r"Correlation: $\bar{r}_{clusters}$ (1985) vs $\beta$ ", fontsize=14, fontweight='bold')
-# plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig('radius_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
@@ -190,7 +295,6 @@ plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
 plt.xlabel('Radius 1985', fontsize=12)   
 plt.ylabel('Ratio Area 1985', fontsize=12)
 plt.title('Correlation: Radius vs Ratio Area (1985)', fontsize=14, fontweight='bold')
-# plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig('radius_vs_ratio_correlation_labeled.png', dpi=300, bbox_inches='tight')
@@ -224,46 +328,44 @@ plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
 plt.xlabel('LCC Growth Rate (1985-2015)', fontsize=12)  
 plt.ylabel(r"$\beta$", fontsize=12)
 plt.title(r"Correlation: LCC Growth Rate vs $\beta$", fontsize=14, fontweight='bold')
-# plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig('lcc_growth_rate_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
 plt.show()
+# # PLOT 5: Beta vs LCC Growth Rate (reversed axes - as in original)
+# plt.figure(figsize=(14, 8))
+# # For reversed axes, we need to fit beta as x and growth as y
+# fit_reversed=np.polyfit(data['beta'],data['LCC_growth _rate'],1)
 
-# PLOT 5: Beta vs LCC Growth Rate (reversed axes - as in original)
-plt.figure(figsize=(14, 8))
-# For reversed axes, we need to fit beta as x and growth as y
-fit_reversed=np.polyfit(data['beta'],data['LCC_growth _rate'],1)
+# # Plot points with different colors
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     plt.scatter(city_data['beta'], city_data['LCC_growth _rate'], 
+#                color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
 
-# Plot points with different colors
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    plt.scatter(city_data['beta'], city_data['LCC_growth _rate'], 
-               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
+# # Plot fit line
+# x_fit = np.array([data['beta'].min(), data['beta'].max()])
+# plt.plot(x_fit, fit_reversed[0]*x_fit+fit_reversed[1], '--', color='black',
+#          label=f'Linear fit: y={fit_reversed[0]:.2f}x + {fit_reversed[1]:.2f}', linewidth=2, alpha=0.7)
 
-# Plot fit line
-x_fit = np.array([data['beta'].min(), data['beta'].max()])
-plt.plot(x_fit, fit_reversed[0]*x_fit+fit_reversed[1], '--', color='black',
-         label=f'Linear fit: y={fit_reversed[0]:.2f}x + {fit_reversed[1]:.2f}', linewidth=2, alpha=0.7)
+# # Add city labels
+# add_city_labels(plt.gca(), data['beta'], data['LCC_growth _rate'], data['City'])
 
-# Add city labels
-add_city_labels(plt.gca(), data['beta'], data['LCC_growth _rate'], data['City'])
+# # Add correlation statistics as text box
+# textstr = f'Pearson r = {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})\n' + \
+#           f'Spearman ρ = {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})'
+# props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+# plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+#         verticalalignment='top', bbox=props)
 
-# Add correlation statistics as text box
-textstr = f'Pearson r = {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})\n' + \
-          f'Spearman ρ = {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})'
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
-        verticalalignment='top', bbox=props)
-
-plt.xlabel(r"$\beta$", fontsize=12)
-plt.ylabel("Growth of LCC from 1985 to 2015", fontsize=12)
-plt.title(r"Correlation: $\beta$ vs LCC Growth Rate", fontsize=14, fontweight='bold')
-# plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig('beta_vs_lcc_growth_correlation_labeled.png', dpi=300, bbox_inches='tight')
-plt.show()
+# plt.xlabel(r"$\beta$", fontsize=12)
+# plt.ylabel("Growth of LCC from 1985 to 2015", fontsize=12)
+# plt.title(r"Correlation: $\beta$ vs LCC Growth Rate", fontsize=14, fontweight='bold')
+# # plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
+# plt.grid(True, alpha=0.3)
+# plt.tight_layout()
+# plt.savefig('beta_vs_lcc_growth_correlation_labeled.png', dpi=300, bbox_inches='tight')
+# plt.show()
 
 # Create a simplified plot without legend for cleaner visualization
 # PLOT 6: Summary plot without legend (cleaner version)
