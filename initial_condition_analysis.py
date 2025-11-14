@@ -7,6 +7,7 @@ from scipy import stats
 from datetime import datetime
 import matplotlib.cm as cm
 
+
 # Try to import adjustText for better label placement
 try:
     from adjustText import adjust_text
