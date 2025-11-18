@@ -13,9 +13,11 @@ cities=df['City'].tolist()
 
 
 year=1985
+region_size=9000
+coarse_grain_factor=4
 mask_collection=[]
 cities_list=['Bangkok']
-n_clusters=300
+n_clusters=10
 for city in cities_list:
     # Download and load data
     downloader = WSFTileManager(cache_dir="./wsf_cache")
@@ -23,9 +25,15 @@ for city in cities_list:
     results = downloader.download_region(lat, lon, radius_km=20)
     analyzer = BuiltAreaAnalyzer()
     data, metadata = analyzer.load_tiles_from_download_result(results)
-    mask=extract_lcc_and_n_clusters_mask(wsf_data=data, search_radius_factor=8,year=year,center_lcc=True,n_clusters=n_clusters,output_csv=f'/Users/mika/Documents/DATA/masks/mask_{city}_n_clusters={n_clusters}_{year}.csv',coarse_grain_factor=5)
+    mask=extract_lcc_and_n_clusters_mask(wsf_data=data,year=year, n_clusters=n_clusters,
+                                        region_size=region_size,center_lcc=True,
+                                        coarse_grain_factor=coarse_grain_factor,
+                                        output_csv=f'/Users/mika/Documents/DATA/masks/mask_{city}_n_clusters={n_clusters}_{year}.csv',)
     # mask_regional=extract_lcc_region_mask(wsf_data=data,year=year,region_size=2000,coarse_grain_factor=4,label_all_clusters=True,output_csv=f'/Users/mika/Documents/DATA/masks/mask_regional_{city}_n_clusters={n_clusters}_{year}.csv')
-
+    constraint_mask=extract_constraint_mask(wsf_data=data,year=2015,
+                                        region_size=region_size,center_lcc=True,
+                                        coarse_grain_factor=coarse_grain_factor,
+                                        output_csv=f"/Users/mika/Documents/DATA/masks/constraint_mask_{city}.csv")
 
 
  

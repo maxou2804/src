@@ -1143,24 +1143,101 @@ def translate_mask_to_center_lcc(mask: np.ndarray, lcc_label: int = 1) -> Tuple[
 
 
 
+
+def extract_lcc_region(wsf_data: np.ndarray, year: int, region_size: int):
+    """
+    Extract a square region around the LCC centroid.
+    
+    This is a shared helper function used by both mask extraction functions
+    to ensure consistent region extraction.
+    
+    Parameters
+    ----------
+    wsf_data : np.ndarray
+        WSF Evolution data
+    year : int
+        Year to extract
+    region_size : int
+        Size of square region in pixels
+        
+    Returns
+    -------
+    region_mask : np.ndarray
+        Extracted region (region_size × region_size)
+    extraction_info : dict
+        Information about the extraction
+    """
+    # Extract binary mask
+    if NUMBA_AVAILABLE:
+        urbanized_mask = extract_year_mask_numba(wsf_data, year)
+    else:
+        urbanized_mask = (wsf_data > 0) & (wsf_data <= year)
+        urbanized_mask = urbanized_mask.astype(np.uint8)
+    
+    # Find LCC
+    labeled_array, num_features = ndimage.label(urbanized_mask)
+    
+    if num_features == 0:
+        print("  ⚠️  No urbanized areas found!")
+        return np.zeros((region_size, region_size), dtype=np.uint8), {
+            'lcc_found': False,
+            'lcc_centroid': None,
+            'region_bounds': None
+        }
+    
+    # Get LCC
+    component_sizes = ndimage.sum(urbanized_mask, labeled_array, range(1, num_features + 1))
+    lcc_label = np.argmax(component_sizes) + 1
+    
+    # Calculate LCC centroid
+    lcc_mask = (labeled_array == lcc_label).astype(np.uint8)
+    lcc_coords = np.argwhere(lcc_mask)
+    centroid_row = int(np.mean(lcc_coords[:, 0]))
+    centroid_col = int(np.mean(lcc_coords[:, 1]))
+    
+    # Define square region bounds centered on LCC
+    half_size = region_size // 2
+    row_min = max(0, centroid_row - half_size)
+    row_max = min(urbanized_mask.shape[0], centroid_row + half_size)
+    col_min = max(0, centroid_col - half_size)
+    col_max = min(urbanized_mask.shape[1], centroid_col + half_size)
+    
+    actual_height = row_max - row_min
+    actual_width = col_max - col_min
+    
+    # Extract region
+    region_mask = urbanized_mask[row_min:row_max, col_min:col_max].copy()
+    
+    # Pad to exact square if needed (hit boundary)
+    if actual_height != region_size or actual_width != region_size:
+        padded_mask = np.zeros((region_size, region_size), dtype=np.uint8)
+        padded_mask[:actual_height, :actual_width] = region_mask
+        region_mask = padded_mask
+    
+    extraction_info = {
+        'lcc_found': True,
+        'lcc_centroid': (centroid_row, centroid_col),
+        'region_bounds': (row_min, row_max, col_min, col_max),
+        'padded': (actual_height != region_size or actual_width != region_size)
+    }
+    
+    return region_mask, extraction_info
+
+
 def extract_lcc_and_n_clusters_mask(
     wsf_data: np.ndarray,
     year: int,
     n_clusters: int = 5,
+    region_size: int = 1000,
     output_csv: Optional[str] = None,
     coarse_grain_factor: int = 1,
-    search_radius_factor: Optional[float] = None,
     center_lcc: bool = False
 ) -> np.ndarray:
     """
-    Extract city mask with largest connected component (LCC) and n other clusters.
+    Extract city mask with LCC and n other clusters.
     
-    Creates a labeled mask where:
-    - LCC is labeled as 1
-    - 2nd largest cluster is labeled as 2
-    - 3rd largest cluster is labeled as 3
-    - ... and so on for n_clusters
-    - All other areas are labeled as 0
+    **HOMOGENIZED VERSION**: Now uses region_size (pixels) instead of search radius.
+    Produces output of consistent size with extract_constraint_mask().
     
     Parameters
     ----------
@@ -1170,197 +1247,133 @@ def extract_lcc_and_n_clusters_mask(
         Year to extract
     n_clusters : int, default=5
         Number of clusters to extract (including LCC)
-        Total labels will be: 1 (LCC), 2, 3, ..., n_clusters
+        Labels: 1 (LCC), 2, 3, ..., n_clusters
+    region_size : int, default=1000
+        Size of square region in pixels around LCC
+        Final output will be region_size × region_size (before coarse graining)
     output_csv : str, optional
         Path to save the mask as CSV
     coarse_grain_factor : int, default=1
-        Coarse graining factor to reduce output size.
-        - 1 = no coarse graining (original resolution)
-        - 2 = 2x2 blocks → 1 pixel (4x smaller)
-        - 3 = 3x3 blocks → 1 pixel (9x smaller)
-        - etc.
-        Each coarse-grained pixel takes the most common label in its block.
-    search_radius_factor : float, optional
-        Search radius multiplier around LCC centroid (default=None for no limit).
-        If specified, only clusters within (LCC_radius × search_radius_factor) 
-        from LCC centroid are labeled. Matches visualize_clusters_optimized().
-        Example: search_radius_factor=1.5 includes clusters within 1.5× LCC radius.
+        Coarse graining factor (1=no coarse graining)
     center_lcc : bool, default=False
-        If True, translate all urbanized areas so the LCC centroid is aligned 
-        with the mask center. This is useful for preparing the mask for continued
-        growth simulations, as it maximizes available space for expansion in all
-        directions and avoids border effects. Pixels that would go out of bounds
-        are clipped (lost).
+        If True, translate all urbanized areas to center LCC in domain
         
     Returns
     -------
     np.ndarray
         Labeled mask array where LCC=1, second cluster=2, etc.
-        If coarse_grain_factor > 1, returns downsampled array.
+        Shape: (region_size, region_size) or smaller if coarse-grained
         
     Example
     -------
-    >>> # Full resolution, all clusters
-    >>> mask = extract_lcc_and_n_clusters_mask(wsf_data, 2020, n_clusters=10, 
-    ...                                         output_csv='city_mask_2020.csv')
-    >>> print(f"LCC pixels: {(mask == 1).sum()}")
-    >>> 
-    >>> # With search radius (matches visualization)
-    >>> mask_radius = extract_lcc_and_n_clusters_mask(
-    ...     wsf_data, 2020, n_clusters=10,
-    ...     search_radius_factor=1.5,  # Only within 1.5× LCC radius
-    ...     output_csv='city_mask_radius.csv'
+    >>> # Extract 1000×1000 region with top 10 clusters
+    >>> mask = extract_lcc_and_n_clusters_mask(
+    ...     wsf_data, year=2015, 
+    ...     n_clusters=10,
+    ...     region_size=1000,
+    ...     center_lcc=True,
+    ...     output_csv='clusters_2015.csv'
     ... )
-    >>> 
-    >>> # Centered LCC for growth simulation (recommended)
-    >>> mask_centered = extract_lcc_and_n_clusters_mask(
-    ...     wsf_data, 2020, n_clusters=10,
-    ...     center_lcc=True,  # Center LCC in the domain
-    ...     output_csv='city_mask_centered.csv'
-    ... )
-    >>> # Now LCC is centered - ideal for continued growth simulation
-    >>> 
-    >>> # With 3x coarse graining (9x smaller file)
-    >>> mask_cg = extract_lcc_and_n_clusters_mask(wsf_data, 2020, n_clusters=10,
-    ...                                            output_csv='mask_coarse.csv',
-    ...                                            coarse_grain_factor=3)
     """
     start_time = time.time()
     print(f"\n{'='*60}")
-    if search_radius_factor is not None:
-        print(f"Extracting LCC and Top {n_clusters-1} Clusters for {year}")
-        print(f"With search radius: {search_radius_factor}× LCC radius")
-    else:
-        print(f"Extracting LCC and Top {n_clusters-1} Clusters for {year}")
+    print(f"Extracting LCC and Top {n_clusters-1} Clusters for {year}")
+    print(f"Region size: {region_size}×{region_size} pixels (~{region_size*0.03:.1f}km)")
     print(f"{'='*60}")
     
-    # Extract binary mask for the year
-    print(f"  Extracting mask for year {year}...")
-    if NUMBA_AVAILABLE:
-        mask = extract_year_mask_numba(wsf_data, year)
-    else:
-        mask = (wsf_data > 0) & (wsf_data <= year)
-        mask = mask.astype(np.uint8)
+    # Extract region using shared function
+    print(f"  Extracting region around LCC...")
+    region_mask, extraction_info = extract_lcc_region(wsf_data, year, region_size)
     
-    urbanized_pixels = mask.sum()
-    print(f"  Total urbanized pixels: {urbanized_pixels:,}")
+    if not extraction_info['lcc_found']:
+        print("  ⚠️  No LCC found, returning empty mask")
+        if output_csv:
+            df = pd.DataFrame(np.zeros((region_size, region_size), dtype=np.uint32))
+            df.to_csv(output_csv, index=False, header=False)
+        return np.zeros((region_size, region_size), dtype=np.uint32)
     
-    # Apply search radius filter EARLY (before labeling all components)
-    if search_radius_factor is not None:
-        print(f"\n  Applying search radius filter (factor={search_radius_factor})...")
-        
-        # First, find LCC quickly
-        labeled_temp, num_temp = ndimage.label(mask)
-        component_sizes_temp = ndimage.sum(mask, labeled_temp, range(1, num_temp + 1))
-        lcc_label = np.argmax(component_sizes_temp) + 1
-        lcc_mask = (labeled_temp == lcc_label).astype(np.uint8)
-        
-        # Calculate LCC centroid
-        lcc_coords = np.argwhere(lcc_mask)
-        centroid_row = np.mean(lcc_coords[:, 0])
-        centroid_col = np.mean(lcc_coords[:, 1])
-        print(f"  LCC centroid: ({centroid_row:.1f}, {centroid_col:.1f})")
-        
-        # Calculate LCC mean radius
-        distances = np.sqrt((lcc_coords[:, 0] - centroid_row)**2 + 
-                           (lcc_coords[:, 1] - centroid_col)**2)
-        mean_radius = np.mean(distances)
-        search_radius = mean_radius * search_radius_factor
-        search_radius_km = search_radius * 0.03
-        
-        print(f"  LCC mean radius: {mean_radius:.1f} pixels ({mean_radius * 0.03:.2f} km)")
-        print(f"  Search radius: {search_radius:.1f} pixels ({search_radius_km:.2f} km)")
-        
-        # Create circular mask
-        if NUMBA_AVAILABLE:
-            circle_mask = create_circular_mask_numba(
-                wsf_data.shape[0], wsf_data.shape[1],
-                int(centroid_row), int(centroid_col), search_radius
-            )
-        else:
-            rows, cols = np.ogrid[0:wsf_data.shape[0], 0:wsf_data.shape[1]]
-            distance_from_centroid = np.sqrt((rows - centroid_row)**2 + (cols - centroid_col)**2)
-            circle_mask = (distance_from_centroid <= search_radius).astype(np.uint8)
-        
-        # Filter mask to only areas within circle (BEFORE labeling all components!)
-        mask_in_circle = mask & circle_mask
-        urbanized_in_circle = mask_in_circle.sum()
-        print(f"  Urbanized pixels in search radius: {urbanized_in_circle:,}")
-        print(f"  Pixels excluded: {urbanized_pixels - urbanized_in_circle:,}")
-        
-        # Use filtered mask for all subsequent operations
-        mask = mask_in_circle
-        urbanized_pixels = urbanized_in_circle
+    print(f"  LCC centroid: {extraction_info['lcc_centroid']}")
     
-    # Label connected components (now only within circle if radius was specified!)
+    urbanized_pixels = region_mask.sum()
+    print(f"  Urbanized pixels in region: {urbanized_pixels:,}")
+    
+    # Label connected components in the region
     print(f"  Labeling connected components...")
-    labeled_array, num_features = ndimage.label(mask)
+    labeled_array, num_features = ndimage.label(region_mask)
     print(f"  Found {num_features:,} connected components")
     
-    # Get sizes of all components
-    print(f"  Computing component sizes...")
-    label_ids = np.arange(1, num_features + 1)
-    sizes = ndimage.sum(mask, labeled_array, label_ids)
-    
-    # Sort by size (largest first)
-    sorted_indices = np.argsort(sizes)[::-1]
-    sorted_label_ids = label_ids[sorted_indices]
-    sorted_sizes = sizes[sorted_indices]
-    
-    # Create output mask (initialized to zeros)
-    output_mask = np.zeros_like(mask, dtype=np.uint32)
-    
-    # Determine how many clusters to extract (minimum of requested and available)
-    n_to_extract = min(n_clusters, num_features)
-    
-    print(f"\n  Extracting top {n_to_extract} clusters:")
-    print(f"  {'Rank':<6} {'Label':<12} {'Size (pixels)':<15} {'Size (km²)':<12}")
-    print(f"  {'-'*50}")
-    
-    pixel_area_km2 = 0.03 * 0.03  # 30m pixels
-    
-    # Assign labels: 1 for LCC, 2 for second, etc.
-    for rank in range(n_to_extract):
-        original_label = sorted_label_ids[rank]
-        new_label = rank + 1  # 1-indexed: LCC=1, second=2, etc.
-        size_pixels = int(sorted_sizes[rank])
-        size_km2 = size_pixels * pixel_area_km2
+    if num_features == 0:
+        print("  ⚠️  No components found")
+        output_mask = np.zeros((region_size, region_size), dtype=np.uint32)
+    else:
+        # Get component sizes
+        label_ids = np.arange(1, num_features + 1)
+        sizes = ndimage.sum(region_mask, labeled_array, label_ids)
         
-        # Assign new label in output mask
-        output_mask[labeled_array == original_label] = new_label
+        # Sort by size
+        sorted_indices = np.argsort(sizes)[::-1]
+        sorted_label_ids = label_ids[sorted_indices]
+        sorted_sizes = sizes[sorted_indices]
         
-        cluster_type = "LCC" if rank == 0 else f"Cluster {rank}"
-        print(f"  {rank+1:<6} {cluster_type:<12} {size_pixels:<15,} {size_km2:<12.2f}")
+        # Create output mask
+        output_mask = np.zeros((region_size, region_size), dtype=np.uint32)
+        
+        # Determine how many to extract
+        n_to_extract = min(n_clusters, num_features)
+        
+        # Hard limit at 100 clusters
+        if n_to_extract > 100:
+            print(f"  ⚠️  Limiting to 100 clusters (requested {n_to_extract})")
+            n_to_extract = 100
+        
+        print(f"\n  Extracting top {n_to_extract} clusters:")
+        print(f"  {'Rank':<8} {'Label':<12} {'Size (pixels)':<15} {'Size (km²)':<12}")
+        print(f"  {'-'*50}")
+        
+        pixel_area_km2 = 0.03 * 0.03
+        
+        # Assign labels: 1 for LCC, 2 for second, etc.
+        for rank in range(n_to_extract):
+            original_label = sorted_label_ids[rank]
+            new_label = rank + 1
+            size_pixels = int(sorted_sizes[rank])
+            size_km2 = size_pixels * pixel_area_km2
+            
+            output_mask[labeled_array == original_label] = new_label
+            
+            cluster_type = "LCC" if rank == 0 else f"Cluster {rank}"
+            
+            # Only print first 10 for brevity
+            if rank < 10:
+                print(f"  {new_label:<8} {cluster_type:<12} {size_pixels:<15,} {size_km2:<12.2f}")
+        
+        if n_to_extract > 10:
+            print(f"  ... and {n_to_extract - 10} more clusters")
+        
+        total_labeled = (output_mask > 0).sum()
+        print(f"\n  Total labeled pixels: {total_labeled:,}")
     
-    total_labeled_pixels = (output_mask > 0).sum()
-    print(f"\n  Total labeled pixels: {total_labeled_pixels:,}")
-    print(f"  Unlabeled pixels: {urbanized_pixels - total_labeled_pixels:,}")
-    print(f"  Original mask shape: {output_mask.shape}")
-    
-    # Apply translation to center LCC if requested
-    if center_lcc:
-        print(f"\n  Centering LCC at mask center...")
+    # Apply LCC centering if requested
+    if center_lcc and (output_mask > 0).sum() > 0:
+        print(f"\n  Centering LCC in domain...")
         trans_start = time.time()
         
-        output_mask, translation_info = translate_mask_to_center_lcc(output_mask, lcc_label=1)
+        output_mask, trans_info = translate_mask_to_center_lcc(output_mask, lcc_label=1)
         
         trans_time = time.time() - trans_start
         print(f"  Translation completed in {trans_time:.2f}s")
-        
-        # Update pixel counts after translation
-        total_labeled_pixels = (output_mask > 0).sum()
-        print(f"  Total labeled pixels after translation: {total_labeled_pixels:,}")
+        print(f"  Pixels kept: {trans_info['pixels_kept']:,}")
+    
+    print(f"  Pre-coarse-grain shape: {output_mask.shape}")
     
     # Apply coarse graining if requested
     if coarse_grain_factor > 1:
         print(f"\n  Applying {coarse_grain_factor}x coarse graining...")
         cg_start = time.time()
         
-        # Use optimized version if available
         if NUMBA_AVAILABLE:
             coarse_mask = coarse_grain_mask_numba(output_mask, coarse_grain_factor)
         else:
-            # Fallback to numpy version
             new_height = output_mask.shape[0] // coarse_grain_factor
             new_width = output_mask.shape[1] // coarse_grain_factor
             coarse_mask = np.zeros((new_height, new_width), dtype=np.uint32)
@@ -1377,7 +1390,6 @@ def extract_lcc_and_n_clusters_mask(
         
         cg_time = time.time() - cg_start
         
-        # Calculate size reduction
         original_size = output_mask.shape[0] * output_mask.shape[1]
         coarse_size = coarse_mask.shape[0] * coarse_mask.shape[1]
         reduction_factor = original_size / coarse_size
@@ -1386,263 +1398,140 @@ def extract_lcc_and_n_clusters_mask(
         print(f"  Size reduction: {reduction_factor:.1f}x smaller")
         print(f"  Coarse graining time: {cg_time:.2f}s")
         
-        # Use coarse-grained mask for output
         output_mask = coarse_mask
     
     # Save to CSV if requested
     if output_csv:
         print(f"\n  Saving mask to CSV: {output_csv}")
-        print(f"  Mask dimensions: {output_mask.shape[0]} rows × {output_mask.shape[1]} columns")
         save_start = time.time()
         
-        # Convert to DataFrame and save
         df = pd.DataFrame(output_mask)
         df.to_csv(output_csv, index=False, header=False)
         
         save_time = time.time() - save_start
-        print(f"  ✓ Saved successfully in {save_time:.2f}s")
+        print(f"  ✓ Saved in {save_time:.2f}s")
         
-        # File size info
         file_size_mb = Path(output_csv).stat().st_size / (1024 * 1024)
         print(f"  File size: {file_size_mb:.2f} MB")
     
     total_time = time.time() - start_time
-    print(f"\n  Total execution time: {total_time:.2f}s")
-    print(f"  Final output shape: {output_mask.shape}")
+    print(f"\n  Total time: {total_time:.2f}s")
+    print(f"  Final shape: {output_mask.shape}")
     print(f"{'='*60}\n")
     
     return output_mask
 
-def extract_lcc_region_mask(
+
+def extract_constraint_mask(
     wsf_data: np.ndarray,
-    year: int,
-    region_size: int,
+    year: int = 2015,
+    region_size: int = 1000,
     output_csv: Optional[str] = None,
     coarse_grain_factor: int = 1,
-    label_all_clusters: bool = True
+    center_lcc: bool = False
 ) -> np.ndarray:
     """
-    Extract all urbanized areas within a square region around LCC center.
+    Extract constraint mask showing non-urbanized areas.
     
-    Creates a square mask of size region_size × region_size centered on the LCC,
-    showing all urbanized areas in that region. The LCC is labeled as 1, and other
-    clusters can be labeled individually or grouped.
-    
-    **HARD LIMIT: 100 clusters maximum.** If region contains >100 clusters, only
-    the 100 largest are labeled. Remaining clusters become background (0).
+    **HOMOGENIZED VERSION**: Simplified interface to match extract_lcc_and_n_clusters_mask().
+    Always extracts a region around LCC of size region_size × region_size.
     
     Parameters
     ----------
     wsf_data : np.ndarray
         WSF Evolution data array
-    year : int
-        Year to extract
-    region_size : int
-        Size of the square region (in pixels) to extract around LCC center
-        Final output will be region_size × region_size
+    year : int, default=2015
+        Year to extract constraint mask for
+    region_size : int, default=1000
+        Size of square region in pixels around LCC
+        Final output will be region_size × region_size (before coarse graining)
     output_csv : str, optional
-        Path to save the mask as CSV
+        Path to save the constraint mask as CSV
     coarse_grain_factor : int, default=1
-        Coarse graining factor to reduce output size
-        Applied AFTER extracting the region
-    label_all_clusters : bool, default=True
-        If True: Each cluster gets unique label (1=LCC, 2=2nd cluster, 3=3rd, etc.)
-        If False: All non-LCC urbanized areas labeled as 2
+        Coarse graining factor (1=no coarse graining)
+    center_lcc : bool, default=False
+        If True, translate all urbanized areas to center LCC in domain
         
     Returns
     -------
     np.ndarray
-        Square mask of size (region_size × region_size) or smaller if coarse-grained
-        - 0: Background/non-urban
-        - 1: LCC
-        - 2, 3, 4, ...: Other clusters (if label_all_clusters=True)
-        - 2: All other urban areas (if label_all_clusters=False)
+        Binary constraint mask where 1=available, 0=urbanized
+        Shape: (region_size, region_size) or smaller if coarse-grained
         
     Example
     -------
-    >>> # Extract 1000×1000 pixel region around LCC
-    >>> mask = extract_lcc_region_mask(
-    ...     wsf_data, 2020, region_size=1000,
-    ...     output_csv='lcc_region_2020.csv'
-    ... )
-    >>> print(f"Region shape: {mask.shape}")
-    >>> print(f"LCC pixels in region: {(mask == 1).sum()}")
-    >>> 
-    >>> # With coarse graining
-    >>> mask_cg = extract_lcc_region_mask(
-    ...     wsf_data, 2020, region_size=1000,
-    ...     coarse_grain_factor=3,
-    ...     output_csv='lcc_region_cg3.csv'
+    >>> # Extract constraint mask matching cluster mask dimensions
+    >>> constraint = extract_constraint_mask(
+    ...     wsf_data, year=2015,
+    ...     region_size=1000,
+    ...     center_lcc=True,
+    ...     output_csv='constraint_2015.csv'
     ... )
     """
     start_time = time.time()
     print(f"\n{'='*60}")
-    print(f"Extracting LCC Region ({region_size}×{region_size}) for {year}")
+    print(f"Extracting Constraint Mask (Non-Urbanized) for {year}")
+    print(f"Region size: {region_size}×{region_size} pixels (~{region_size*0.03:.1f}km)")
     print(f"{'='*60}")
     
-    # Extract binary mask for the year
-    print(f"  Extracting mask for year {year}...")
-    if NUMBA_AVAILABLE:
-        mask = extract_year_mask_numba(wsf_data, year)
+    # Extract region using shared function
+    print(f"  Extracting region around LCC...")
+    region_mask, extraction_info = extract_lcc_region(wsf_data, year, region_size)
+    
+    if not extraction_info['lcc_found']:
+        print("  ⚠️  No LCC found, returning all-available mask")
+        constraint_mask = np.ones((region_size, region_size), dtype=np.uint8)
     else:
-        mask = (wsf_data > 0) & (wsf_data <= year)
-        mask = mask.astype(np.uint8)
-    
-    urbanized_pixels = mask.sum()
-    print(f"  Total urbanized pixels: {urbanized_pixels:,}")
-    
-    # Find LCC
-    print(f"  Finding largest connected component...")
-    labeled_array, num_features = ndimage.label(mask)
-    
-    if num_features == 0:
-        print("  ⚠️  No urbanized areas found!")
-        return np.zeros((region_size, region_size), dtype=np.uint32)
-    
-    # Get LCC (largest component)
-    component_sizes = ndimage.sum(mask, labeled_array, range(1, num_features + 1))
-    lcc_label = np.argmax(component_sizes) + 1
-    lcc_size = int(component_sizes[lcc_label - 1])
-    
-    print(f"  LCC size: {lcc_size:,} pixels ({lcc_size * 0.03 * 0.03:.2f} km²)")
-    
-    # Calculate LCC centroid
-    print(f"  Calculating LCC centroid...")
-    lcc_mask = (labeled_array == lcc_label).astype(np.uint8)
-    lcc_coords = np.argwhere(lcc_mask)
-    centroid_row = int(np.mean(lcc_coords[:, 0]))
-    centroid_col = int(np.mean(lcc_coords[:, 1]))
-    
-    print(f"  LCC centroid: ({centroid_row}, {centroid_col})")
-    
-    # Define square region bounds
-    half_size = region_size // 2
-    row_min = max(0, centroid_row - half_size)
-    row_max = min(mask.shape[0], centroid_row + half_size)
-    col_min = max(0, centroid_col - half_size)
-    col_max = min(mask.shape[1], centroid_col + half_size)
-    
-    # Adjust if we hit boundaries
-    actual_height = row_max - row_min
-    actual_width = col_max - col_min
-    
-    print(f"  Region bounds: rows [{row_min}:{row_max}], cols [{col_min}:{col_max}]")
-    print(f"  Actual region size: {actual_height} × {actual_width}")
-    
-    if actual_height != region_size or actual_width != region_size:
-        print(f"  ⚠️  Requested size {region_size}×{region_size} adjusted due to image boundaries")
-    
-    # Extract region
-    region_mask = mask[row_min:row_max, col_min:col_max].copy()
-    region_labeled = labeled_array[row_min:row_max, col_min:col_max].copy()
-    
-    # Count urbanized pixels in region
-    region_urban_pixels = region_mask.sum()
-    print(f"  Urbanized pixels in region: {region_urban_pixels:,}")
-    
-    # Create output mask
-    print(f"  Creating labeled mask...")
-    output_mask = np.zeros((actual_height, actual_width), dtype=np.uint32)
-    
-    if label_all_clusters:
-        # Label each cluster individually
-        # Find all clusters in the region
-        region_clusters, n_clusters = ndimage.label(region_mask)
+        print(f"  LCC centroid: {extraction_info['lcc_centroid']}")
         
-        if n_clusters > 0:
-            cluster_sizes = ndimage.sum(region_mask, region_clusters, range(1, n_clusters + 1))
-            sorted_indices = np.argsort(cluster_sizes)[::-1]
-            
-            # HARD LIMIT: Only label top 100 clusters
-            max_clusters_to_label = min(100, n_clusters)
-            
-            if n_clusters > 100:
-                print(f"  ⚠️  Found {n_clusters} clusters, labeling top 100 only")
-                print(f"  Remaining {n_clusters - 100} clusters will be background (0)")
-            else:
-                print(f"  Found {n_clusters} clusters in region")
-            
-            print(f"\n  Cluster breakdown:")
-            print(f"  {'Rank':<8} {'Type':<15} {'Size (pixels)':<15} {'Size (km²)':<12}")
-            print(f"  {'-'*55}")
-            
-            pixel_area_km2 = 0.03 * 0.03
-            
-            # Check which cluster is the LCC
-            lcc_present_in_region = False
-            lcc_region_label = -1
-            
-            for cluster_id in range(1, n_clusters + 1):
-                cluster_pixels = (region_clusters == cluster_id)
-                # Check if this cluster overlaps with LCC
-                overlap = np.sum(cluster_pixels & (region_labeled == lcc_label))
-                if overlap > 0:
-                    lcc_present_in_region = True
-                    lcc_region_label = cluster_id
-                    break
-            
-            # Assign labels
-            label_counter = 1
-            
-            # First, label the LCC if present
-            if lcc_present_in_region:
-                output_mask[region_clusters == lcc_region_label] = 1
-                cluster_size = int(cluster_sizes[lcc_region_label - 1])
-                print(f"  {label_counter:<8} {'LCC':<15} {cluster_size:<15,} {cluster_size * pixel_area_km2:<12.2f}")
-                label_counter += 1
-            
-            # Then label other clusters by size (UP TO 100 TOTAL)
-            clusters_labeled = 0
-            for idx in sorted_indices:
-                cluster_id = idx + 1
-                if cluster_id == lcc_region_label:
-                    continue  # Already labeled
-                
-                # Check if we've reached the limit
-                if label_counter > 100:
-                    break  # Stop labeling after 100 clusters
-                
-                # ASSIGN LABEL
-                output_mask[region_clusters == cluster_id] = label_counter
-                clusters_labeled += 1
-                
-                # PRINT INFO (only for first 10)
-                if label_counter <= 10:
-                    cluster_size = int(cluster_sizes[idx])
-                    print(f"  {label_counter:<8} {'Cluster ' + str(label_counter):<15} {cluster_size:<15,} {cluster_size * pixel_area_km2:<12.2f}")
-                
-                label_counter += 1
-            
-            # Print summary if more than 10 clusters were labeled
-            if label_counter > 11:
-                print(f"  ... and {label_counter - 11} more clusters (labels {11}-{label_counter-1})")
-            
-            # Print how many clusters were excluded (if any)
-            if n_clusters > 100:
-                excluded = n_clusters - clusters_labeled - (1 if lcc_present_in_region else 0)
-                print(f"\n  ⚠️  Excluded {excluded} small clusters (beyond 100 cluster limit)")
+        urbanized_pixels = region_mask.sum()
+        available_pixels = region_size * region_size - urbanized_pixels
         
-    else:
-        # Simple binary: LCC vs other urbanized areas
-        lcc_in_region = (region_labeled == lcc_label)
-        output_mask[lcc_in_region] = 1
-        output_mask[region_mask & ~lcc_in_region] = 2
+        print(f"  Urbanized pixels: {urbanized_pixels:,}")
+        print(f"  Available pixels: {available_pixels:,} ({available_pixels/(region_size**2)*100:.1f}%)")
         
-        lcc_pixels_in_region = lcc_in_region.sum()
-        other_pixels_in_region = region_urban_pixels - lcc_pixels_in_region
+        # Apply LCC centering if requested
+        if center_lcc and urbanized_pixels > 0:
+            print(f"\n  Centering LCC in domain...")
+            trans_start = time.time()
+            
+            # Re-label the region to find LCC
+            region_labeled, region_features = ndimage.label(region_mask)
+            
+            if region_features > 0:
+                region_sizes = ndimage.sum(region_mask, region_labeled, 
+                                          range(1, region_features + 1))
+                region_lcc_label = np.argmax(region_sizes) + 1
+                
+                # Create labeled mask with LCC=1
+                temp_labeled = np.zeros_like(region_mask, dtype=np.uint32)
+                temp_labeled[region_labeled == region_lcc_label] = 1
+                temp_labeled[region_mask & (region_labeled != region_lcc_label)] = 2
+                
+                # Translate to center
+                centered_mask, trans_info = translate_mask_to_center_lcc(
+                    temp_labeled, lcc_label=1
+                )
+                
+                # Convert back to binary urbanized mask
+                region_mask = (centered_mask > 0).astype(np.uint8)
+                
+                trans_time = time.time() - trans_start
+                print(f"  Translation completed in {trans_time:.2f}s")
+                print(f"  Pixels kept: {trans_info['pixels_kept']:,}")
         
-        print(f"\n  Label breakdown:")
-        print(f"    LCC (label=1): {lcc_pixels_in_region:,} pixels")
-        print(f"    Other urban (label=2): {other_pixels_in_region:,} pixels")
+        # Create constraint mask (INVERT: non-urbanized = 1)
+        print(f"\n  Creating constraint mask...")
+        constraint_mask = (1 - region_mask).astype(np.uint8)
+        
+        available_after = constraint_mask.sum()
+        constrained_after = (constraint_mask == 0).sum()
+        
+        print(f"  Final breakdown:")
+        print(f"    Available (1): {available_after:,} pixels")
+        print(f"    Constrained (0): {constrained_after:,} pixels")
     
-    print(f"\n  Original region shape: {output_mask.shape}")
-    
-    # Pad to exact square if needed
-    if actual_height != region_size or actual_width != region_size:
-        padded_mask = np.zeros((region_size, region_size), dtype=np.uint32)
-        padded_mask[:actual_height, :actual_width] = output_mask
-        output_mask = padded_mask
-        print(f"  Padded to requested size: {output_mask.shape}")
+    print(f"  Pre-coarse-grain shape: {constraint_mask.shape}")
     
     # Apply coarse graining if requested
     if coarse_grain_factor > 1:
@@ -1650,25 +1539,25 @@ def extract_lcc_region_mask(
         cg_start = time.time()
         
         if NUMBA_AVAILABLE:
-            coarse_mask = coarse_grain_mask_numba(output_mask, coarse_grain_factor)
+            coarse_mask = coarse_grain_mask_numba(constraint_mask, coarse_grain_factor)
         else:
-            new_height = output_mask.shape[0] // coarse_grain_factor
-            new_width = output_mask.shape[1] // coarse_grain_factor
-            coarse_mask = np.zeros((new_height, new_width), dtype=np.uint32)
+            new_height = constraint_mask.shape[0] // coarse_grain_factor
+            new_width = constraint_mask.shape[1] // coarse_grain_factor
+            coarse_mask = np.zeros((new_height, new_width), dtype=np.uint8)
             
             for i in range(new_height):
                 for j in range(new_width):
-                    block = output_mask[
+                    block = constraint_mask[
                         i * coarse_grain_factor:(i + 1) * coarse_grain_factor,
                         j * coarse_grain_factor:(j + 1) * coarse_grain_factor
                     ]
                     if block.size > 0:
-                        counts = np.bincount(block.ravel())
-                        coarse_mask[i, j] = np.argmax(counts)
+                        # Majority voting for constraints
+                        coarse_mask[i, j] = 1 if block.mean() >= 0.5 else 0
         
         cg_time = time.time() - cg_start
         
-        original_size = output_mask.shape[0] * output_mask.shape[1]
+        original_size = constraint_mask.shape[0] * constraint_mask.shape[1]
         coarse_size = coarse_mask.shape[0] * coarse_mask.shape[1]
         reduction_factor = original_size / coarse_size
         
@@ -1676,29 +1565,28 @@ def extract_lcc_region_mask(
         print(f"  Size reduction: {reduction_factor:.1f}x smaller")
         print(f"  Coarse graining time: {cg_time:.2f}s")
         
-        output_mask = coarse_mask
+        constraint_mask = coarse_mask
     
     # Save to CSV if requested
     if output_csv:
-        print(f"\n  Saving mask to CSV: {output_csv}")
-        print(f"  Mask dimensions: {output_mask.shape[0]} rows × {output_mask.shape[1]} columns")
+        print(f"\n  Saving constraint mask to CSV: {output_csv}")
         save_start = time.time()
         
-        df = pd.DataFrame(output_mask)
+        df = pd.DataFrame(constraint_mask)
         df.to_csv(output_csv, index=False, header=False)
         
         save_time = time.time() - save_start
-        print(f"  ✓ Saved successfully in {save_time:.2f}s")
+        print(f"  ✓ Saved in {save_time:.2f}s")
         
         file_size_mb = Path(output_csv).stat().st_size / (1024 * 1024)
         print(f"  File size: {file_size_mb:.2f} MB")
     
     total_time = time.time() - start_time
-    print(f"\n  Total execution time: {total_time:.2f}s")
-    print(f"  Final output shape: {output_mask.shape}")
+    print(f"\n  Total time: {total_time:.2f}s")
+    print(f"  Final shape: {constraint_mask.shape}")
     print(f"{'='*60}\n")
     
-    return output_mask
+    return constraint_mask
 
 
 def visualize_clusters_optimized(wsf_data: np.ndarray, 

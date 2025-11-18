@@ -14,7 +14,7 @@ cities=['Bangkok']
 output_directory="outputs_evolution"
 for name in cities:
 
-    year=1985
+    year=2015
     radius_factor=5.0
 
 
@@ -33,11 +33,12 @@ for name in cities:
     # )
     # tracker.export_evolution_csv(data, f"output_{name}.csv")
 
-    # Visualize (NEW!)
-    stats = visualize_clusters_optimized(
-        wsf_data=data, analyzer=analyzer, year=year,
-        radius_factor=radius_factor, n_clusters=30,dpi=900,show_circle=False,crop_factor=2,
-        output_path=f"clusters_{name}_{year}.png"
-    )
+    # # Visualize (NEW!)
+    # stats = visualize_clusters_optimized(
+    #     wsf_data=data, analyzer=analyzer, year=year,
+    #     radius_factor=radius_factor, n_clusters=30,dpi=900,show_circle=False,crop_factor=2,
+    #     output_path=f"clusters_{name}_{year}.png"
+    # )
 
 
+constraint_mask=extract_constraint_mask(wsf_data=data,year=year,region_type='lcc_region',region_size=1500,center_on_lcc=True,coarse_grain_factor=1,output_csv=f"constraint_mask_{name}.csv")
