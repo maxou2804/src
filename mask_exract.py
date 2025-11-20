@@ -13,11 +13,11 @@ cities=df['City'].tolist()
 
 
 year=1985
-region_size=9000
+region_size=8000
 coarse_grain_factor=4
 mask_collection=[]
-cities_list=['Bangkok']
-n_clusters=10
+cities_list=['Atlanta']
+n_clusters=90
 for city in cities_list:
     # Download and load data
     downloader = WSFTileManager(cache_dir="./wsf_cache")
