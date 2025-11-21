@@ -1965,3 +1965,310 @@ def visualize_clusters_optimized(wsf_data: np.ndarray,
     cluster_data['display_shape'] = mask_display.shape
     
     return cluster_data
+
+
+
+def calculate_lcc_density_metrics(
+    wsf_data: np.ndarray,
+    year: int,
+    analyzer: Optional[BuiltAreaAnalyzer] = None
+) -> Dict:
+    """
+    Calculate the ratio of non-urbanized pixels in the LCC region using three methods.
+    Method 1 (Bounding Box): Uses the strict rectangular perimeter (bounding box) of the LCC.
+    Method 2 (Convex Hull): Uses the convex hull (smallest convex polygon) containing the LCC.
+    Method 3 (Filled Holes): Fills internal holes in the LCC to consider only non-urbanized regions inside the LCC.
+    The ratio represents "porosity" or "fragmentation" - how much empty space exists
+    within the urban area's boundary.
+    Parameters
+    ----------
+    wsf_data : np.ndarray
+        WSF Evolution data array
+    year : int
+        Year to analyze
+    analyzer : BuiltAreaAnalyzer, optional
+        If provided, uses this analyzer. Otherwise creates a new one.
+    Returns
+    -------
+    dict
+        Dictionary with metrics for all methods:
+        - 'year': year analyzed
+        - 'lcc_pixels': total LCC pixels (urbanized)
+        - 'lcc_area_km2': LCC area in km²
+        Bounding Box metrics:
+        - 'bbox_total_pixels': total pixels in bounding box
+        - 'bbox_urbanized_pixels': urbanized pixels in bbox
+        - 'bbox_non_urbanized_pixels': non-urbanized pixels in bbox
+        - 'bbox_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
+        - 'bbox_bounds': (row_min, row_max, col_min, col_max)
+        Convex Hull metrics:
+        - 'convex_hull_total_pixels': total pixels in convex hull
+        - 'convex_hull_urbanized_pixels': urbanized pixels in hull
+        - 'convex_hull_non_urbanized_pixels': non-urbanized pixels in hull
+        - 'convex_hull_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
+        - 'convex_hull_vertices': number of vertices in hull
+        Filled Holes metrics:
+        - 'filled_total_pixels': total pixels in filled LCC
+        - 'filled_urbanized_pixels': urbanized pixels in filled
+        - 'filled_non_urbanized_pixels': non-urbanized pixels in filled
+        - 'filled_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
+    Example
+    -------
+    >>> metrics = calculate_lcc_density_metrics(wsf_data, year=2015)
+    >>> print(f"Bbox porosity: {metrics['bbox_non_urbanized_ratio']:.2%}")
+    >>> print(f"Hull porosity: {metrics['convex_hull_non_urbanized_ratio']:.2%}")
+    >>> print(f"Filled porosity: {metrics['filled_non_urbanized_ratio']:.2%}")
+    """
+    from scipy.spatial import ConvexHull
+    from skimage.draw import polygon
+    from scipy.ndimage import binary_fill_holes
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Polygon, Rectangle
+    import numpy as np
+    # Create analyzer if not provided
+    if analyzer is None:
+        analyzer = BuiltAreaAnalyzer()
+    print(f"\n{'='*60}")
+    print(f"Calculating LCC Density Metrics for {year}")
+    print(f"{'='*60}")
+    # Extract urbanized mask for the year
+    print(" Extracting urbanized areas...")
+    urbanized_mask = analyzer.extract_year_mask(wsf_data, year)
+    if urbanized_mask.sum() == 0:
+        print(" ⚠️ No urbanized areas found!")
+        return {
+            'year': year,
+            'lcc_pixels': 0,
+            'lcc_area_km2': 0.0,
+            'bbox_non_urbanized_ratio': None,
+            'convex_hull_non_urbanized_ratio': None,
+            'filled_non_urbanized_ratio': None,
+            'error': 'No urbanized areas'
+        }
+    # Find LCC
+    print(" Finding largest connected component...")
+    lcc_mask, lcc_size = analyzer.find_largest_connected_component(urbanized_mask)
+    if lcc_size == 0:
+        print(" ⚠️ No LCC found!")
+        return {
+            'year': year,
+            'lcc_pixels': 0,
+            'lcc_area_km2': 0.0,
+            'bbox_non_urbanized_ratio': None,
+            'convex_hull_non_urbanized_ratio': None,
+            'filled_non_urbanized_ratio': None,
+            'error': 'No LCC found'
+        }
+    pixel_area_km2 = 0.03 * 0.03 # 30m × 30m
+    lcc_area_km2 = lcc_size * pixel_area_km2
+    print(f" LCC size: {lcc_size:,} pixels ({lcc_area_km2:.2f} km²)")
+    # Get LCC coordinates
+    lcc_coords = np.argwhere(lcc_mask == 1)
+    # ========================================================================
+    # METHOD 1: BOUNDING BOX (Strict Perimeter)
+    # ========================================================================
+    print("\n Method 1: Bounding Box Analysis")
+    row_min = lcc_coords[:, 0].min()
+    row_max = lcc_coords[:, 0].max()
+    col_min = lcc_coords[:, 1].min()
+    col_max = lcc_coords[:, 1].max()
+    bbox_height = row_max - row_min + 1
+    bbox_width = col_max - col_min + 1
+    bbox_total_pixels = bbox_height * bbox_width
+    print(f" Bounding box: {bbox_height} × {bbox_width} pixels")
+    print(f" Total bbox pixels: {bbox_total_pixels:,}")
+    # Extract bbox region
+    bbox_region = lcc_mask[row_min:row_max+1, col_min:col_max+1]
+    bbox_urbanized = bbox_region.sum()
+    bbox_non_urbanized = bbox_total_pixels - bbox_urbanized
+    bbox_ratio = bbox_non_urbanized / bbox_total_pixels if bbox_total_pixels > 0 else 0.0
+    print(f" Urbanized pixels: {bbox_urbanized:,}")
+    print(f" Non-urbanized pixels: {bbox_non_urbanized:,}")
+    print(f" Non-urbanized ratio: {bbox_ratio:.4f} ({bbox_ratio*100:.2f}%)")
+    # ========================================================================
+    # METHOD 2: CONVEX HULL
+    # ========================================================================
+    print("\n Method 2: Convex Hull Analysis")
+    # Compute convex hull of LCC coordinates
+    # Note: ConvexHull expects (x, y) not (row, col), so we swap
+    points_xy = lcc_coords[:, [1, 0]] # Swap to (col, row) = (x, y)
+    try:
+        hull = ConvexHull(points_xy)
+        hull_vertices = points_xy[hull.vertices]
+        print(f" Convex hull vertices: {len(hull_vertices)}")
+        # Create binary mask of convex hull region
+        hull_mask = np.zeros_like(lcc_mask, dtype=np.uint8)
+        # Use polygon to fill the convex hull
+        # polygon expects (row, col) coordinates
+        rr, cc = polygon(hull_vertices[:, 1], hull_vertices[:, 0], lcc_mask.shape)
+        hull_mask[rr, cc] = 1
+        hull_total_pixels = hull_mask.sum()
+        # Count urbanized pixels within hull
+        hull_urbanized = (hull_mask & lcc_mask).sum()
+        hull_non_urbanized = hull_total_pixels - hull_urbanized
+        hull_ratio = hull_non_urbanized / hull_total_pixels if hull_total_pixels > 0 else 0.0
+        print(f" Total hull pixels: {hull_total_pixels:,}")
+        print(f" Urbanized pixels: {hull_urbanized:,}")
+        print(f" Non-urbanized pixels: {hull_non_urbanized:,}")
+        print(f" Non-urbanized ratio: {hull_ratio:.4f} ({hull_ratio*100:.2f}%)")
+        hull_success = True
+        hull_error = None
+    except Exception as e:
+        print(f" ⚠️ Convex hull computation failed: {e}")
+        hull_total_pixels = 0
+        hull_urbanized = 0
+        hull_non_urbanized = 0
+        hull_ratio = None
+        hull_vertices = []
+        hull_success = False
+        hull_error = str(e)
+    # ========================================================================
+    # METHOD 3: FILLED HOLES (Strict Front Considering Internal Non-Urbanized)
+    # ========================================================================
+    print("\n Method 3: Filled Holes Analysis")
+    try:
+        filled_mask = binary_fill_holes(lcc_mask)
+        filled_total_pixels = filled_mask.sum()
+        filled_urbanized = lcc_size
+        filled_non_urbanized = filled_total_pixels - filled_urbanized
+        filled_ratio = filled_non_urbanized / filled_total_pixels if filled_total_pixels > 0 else 0.0
+        print(f" Total filled pixels: {filled_total_pixels:,}")
+        print(f" Urbanized pixels: {filled_urbanized:,}")
+        print(f" Non-urbanized pixels: {filled_non_urbanized:,}")
+        print(f" Non-urbanized ratio: {filled_ratio:.4f} ({filled_ratio*100:.2f}%)")
+        filled_success = True
+        filled_error = None
+    except Exception as e:
+        print(f" ⚠️ Filled holes computation failed: {e}")
+        filled_total_pixels = 0
+        filled_urbanized = 0
+        filled_non_urbanized = 0
+        filled_ratio = None
+        filled_success = False
+        filled_error = str(e)
+    # ========================================================================
+    # COMPARISON
+    # ========================================================================
+    # print(f"\n Comparison:")
+    # print(f" Bounding box non-urbanized: {bbox_ratio*100:.2f}%")
+    # if hull_success:
+    #     print(f" Convex hull non-urbanized: {hull_ratio*100:.2f}%")
+    # if filled_success:
+    #     print(f" Filled holes non-urbanized: {filled_ratio*100:.2f}%")
+    # if hull_success:
+    #     difference_hull_bbox = abs(bbox_ratio - hull_ratio) * 100
+    #     print(f" Difference (bbox vs hull): {difference_hull_bbox:.2f} percentage points")
+    # if filled_success:
+    #     difference_filled_bbox = abs(bbox_ratio - filled_ratio) * 100
+    #     print(f" Difference (bbox vs filled): {difference_filled_bbox:.2f} percentage points")
+    #     if hull_success:
+    #         difference_filled_hull = abs(hull_ratio - filled_ratio) * 100
+    #         print(f" Difference (hull vs filled): {difference_filled_hull:.2f} percentage points")
+    # # Interpretation
+    # if hull_success and filled_success:
+    #     if filled_ratio < hull_ratio < bbox_ratio:
+    #         print(f" → Filled is most compact, then hull, then bbox")
+    #     # Add more if needed
+    # print(f"{'='*60}\n")
+    # # ========================================================================
+    # # VISUALIZATION (Optimized with cropping)
+    # # ========================================================================
+    # print("Visualizing delimitations...")
+    # buffer = 10  # Margin around the bounding box for visualization
+    # # Define visualization crop bounds
+    # vis_row_min = max(0, row_min - buffer)
+    # vis_row_max = min(lcc_mask.shape[0] - 1, row_max + buffer)
+    # vis_col_min = max(0, col_min - buffer)
+    # vis_col_max = min(lcc_mask.shape[1] - 1, col_max + buffer)
+    # # Crop lcc_mask
+    # cropped_lcc = lcc_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    # # Relative coordinates for bbox
+    # rel_row_min = row_min - vis_row_min
+    # rel_row_max = row_max - vis_row_min
+    # rel_col_min = col_min - vis_col_min
+    # rel_col_max = col_max - vis_col_min
+    # # Create cropped bbox_mask
+    # cropped_bbox_mask = np.zeros_like(cropped_lcc, dtype=bool)
+    # cropped_bbox_mask[max(0, rel_row_min):min(cropped_lcc.shape[0], rel_row_max + 1),
+    #                   max(0, rel_col_min):min(cropped_lcc.shape[1], rel_col_max + 1)] = True
+    # # Cropped non-urbanized for bbox
+    # cropped_non_urban_bbox = cropped_bbox_mask & ~cropped_lcc.astype(bool)
+    # num_subplots = 1
+    # if hull_success:
+    #     num_subplots += 1
+    # if filled_success:
+    #     num_subplots += 1
+    # fig, axs = plt.subplots(1, num_subplots, figsize=(10 * num_subplots, 10))
+    # if num_subplots == 1:
+    #     axs = [axs]  # Make it iterable
+    # subplot_idx = 0
+    # # Bounding Box Plot
+    # ax_bbox = axs[subplot_idx]
+    # ax_bbox.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    # ax_bbox.imshow(cropped_non_urban_bbox, cmap='Reds', alpha=0.3, interpolation='none')
+    # # Add bounding box rectangle (relative)
+    # rect = Rectangle((rel_col_min, rel_row_min), bbox_width, bbox_height, edgecolor='blue', facecolor='none', linewidth=2)
+    # ax_bbox.add_patch(rect)
+    # ax_bbox.set_title('Bounding Box Delimitation')
+    # subplot_idx += 1
+    # if hull_success:
+    #     # Crop hull_mask
+    #     cropped_hull_mask = hull_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    #     # Cropped non-urbanized for hull
+    #     cropped_non_urban_hull = cropped_hull_mask.astype(bool) & ~cropped_lcc.astype(bool)
+    #     # Relative hull vertices
+    #     hull_vertices_rel = hull_vertices.copy()
+    #     hull_vertices_rel[:, 0] -= vis_col_min  # x (col)
+    #     hull_vertices_rel[:, 1] -= vis_row_min  # y (row)
+    #     # Convex Hull Plot
+    #     ax_hull = axs[subplot_idx]
+    #     ax_hull.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    #     ax_hull.imshow(cropped_non_urban_hull, cmap='Reds', alpha=0.3, interpolation='none')
+    #     # Add convex hull polygon (relative)
+    #     poly = Polygon(hull_vertices_rel, edgecolor='blue', facecolor='none', linewidth=2)
+    #     ax_hull.add_patch(poly)
+    #     ax_hull.set_title('Convex Hull Delimitation')
+    #     subplot_idx += 1
+    # if filled_success:
+    #     # Crop filled_mask
+    #     cropped_filled_mask = filled_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    #     # Cropped non-urbanized for filled
+    #     cropped_non_urban_filled = cropped_filled_mask.astype(bool) & ~cropped_lcc.astype(bool)
+    #     # Filled Holes Plot
+    #     ax_filled = axs[subplot_idx]
+    #     ax_filled.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    #     ax_filled.imshow(cropped_non_urban_filled, cmap='Reds', alpha=0.3, interpolation='none')
+    #     # Add contour for filled boundary
+    #     ax_filled.contour(cropped_filled_mask, levels=[0.5], colors='blue', linewidths=2)
+    #     ax_filled.set_title('Filled Holes Delimitation')
+    # plt.tight_layout()
+    # plt.show()
+    # Return comprehensive metrics
+    result = {
+        'year': year,
+        'lcc_pixels': int(lcc_size),
+        'lcc_area_km2': round(lcc_area_km2, 3),
+        # Bounding Box
+        'bbox_total_pixels': int(bbox_total_pixels),
+        'bbox_urbanized_pixels': int(bbox_urbanized),
+        'bbox_non_urbanized_pixels': int(bbox_non_urbanized),
+        'bbox_non_urbanized_ratio': round(float(bbox_ratio), 6),
+        'bbox_bounds': (int(row_min), int(row_max), int(col_min), int(col_max)),
+        'bbox_size_pixels': (int(bbox_height), int(bbox_width)),
+        # Convex Hull
+        'convex_hull_success': hull_success,
+        'convex_hull_total_pixels': int(hull_total_pixels),
+        'convex_hull_urbanized_pixels': int(hull_urbanized),
+        'convex_hull_non_urbanized_pixels': int(hull_non_urbanized),
+        'convex_hull_non_urbanized_ratio': round(float(hull_ratio), 6) if hull_success else None,
+        'convex_hull_vertices': len(hull_vertices) if hull_success else 0,
+        'convex_hull_error': hull_error,
+        # Filled Holes
+        'filled_success': filled_success,
+        'filled_total_pixels': int(filled_total_pixels),
+        'filled_urbanized_pixels': int(filled_urbanized),
+        'filled_non_urbanized_pixels': int(filled_non_urbanized),
+        'filled_non_urbanized_ratio': round(float(filled_ratio), 6) if filled_success else None,
+        'filled_error': filled_error
+    }
+    return result
