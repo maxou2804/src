@@ -9,10 +9,15 @@ data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing','Changzhou','Be
 metrics_collection=[]
 metrics_collection_2=[]
 metrics_collection_3=[]
+non_urban_coll=[]
 
 df=pd.DataFrame(data)
+
 cities=df['City'].tolist()
 
+
+
+cities=['Bangkok']
 output_directory="outputs_evolution"
 for name in cities:
 
@@ -47,16 +52,19 @@ for name in cities:
 
 
 
-    metrics=calculate_lcc_density_metrics(data,20198500,analyzer)
+    metrics=calculate_lcc_density_metrics(data,2015,analyzer)
     metrics_collection.append(metrics['convex_hull_non_urbanized_ratio'])
     metrics_collection_2.append(metrics['bbox_non_urbanized_ratio'])
     metrics_collection_3.append(metrics['filled_non_urbanized_ratio'])
+    non_urban_coll.append(metrics['filled_non_urban_clusters'])
 
 
 
-df['metric_hull'] = metrics_collection
-df['metric_bbox']= metrics_collection_2
-df['metric_perimeter']=metrics_collection_3
+# df['metric_hull'] = metrics_collection
+# df['metric_bbox']= metrics_collection_2
+# df['metric_perimeter']=metrics_collection_3
 
 
-df.to_csv('gruyere_metric_1985.csv',index=False)
+# urban_clusters_df=pd.DataFrame(non_urban_coll)
+
+# urban_clusters_df.to_csv('non_urban_clusters_metric_1985.csv',index=False)

@@ -9,7 +9,23 @@ data={'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzhou','Bengalor
 
 
 
+
 df=pd.DataFrame(data)
 
 
+
+df['anisotropy']=[0.3, 0.45, 0.45, 0.25, 0.7, 1.45, 1.7, 0.85, 0.5, 0.7, 0.75,0.82, 0.80, 0.95, 1.05, 0.8, 1.1, 0.5, 1.2 ]
+
+
+
+import matplotlib.pyplot as plt
+from scipy import stats
+
+
+corr=stats.spearmanr(df['anisotropy'],df['beta'])
+print(corr)
+
+plt.figure()
+plt.plot(df['anisotropy'],df['beta'],'o')
+plt.show()
 
