@@ -64,6 +64,14 @@ plt.xlabel('constraint density')
 plt.ylabel('beta')
 plt.show()
 
+plt.figure()
+plt.scatter(df_gruyere['area_population'],df_gruyere['metric_perimeter'])
+texts = [plt.text(df_gruyere['area_population'].iloc[i],df_gruyere['metric_perimeter'].iloc[i], df_gruyere['City'].iloc[i]) for i in range(len( df_gruyere['City']))] 
+adjust_text(texts)
+plt.xlabel('area/population')
+plt.ylabel('constraint density')
+plt.show()
+
 corr_beta_high=stats.spearmanr(high_density['beta'],high_density['metric_perimeter'])
 print(corr_beta_high)
 
@@ -138,4 +146,6 @@ print(corr_std)
 
 plt.figure()
 plt.plot(mean_dist,mean_area,'o')
+plt.xlabel('mean distance of constraints')
+plt.ylabel('mean area of constraints')
 plt.show()
