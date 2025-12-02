@@ -45,7 +45,7 @@ for index, js in enumerate(json_files):
         secondary_urbanized_area= json_text['secondary_urbanization_km2']
         area_lcc_2015=json_text['lcc_2015_area_km2']
         area_lcc_1985=json_text['lcc_1985_in_2015_lcc_km2']
-        num
+        
 
         secondary_urbanized_area=secondary_urbanized_area/area_lcc_2015
       
