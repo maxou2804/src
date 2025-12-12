@@ -6,6 +6,9 @@ import numpy as np
 from scipy import stats
 from datetime import datetime
 import matplotlib.cm as cm
+import csv
+import glob
+
 
 
 # Try to import adjustText for better label placement
@@ -19,7 +22,7 @@ except ImportError:
 ratio_collection=[]
 radius_collection=[]
 rate_collection=[]
-directory='C:\\Users\\trique\\Downloads\\MASTER_THESIS\\data_vizualization\\render_report\\csv_outputs'
+directory='/Users/mika/Documents/DATA/csv_outputs'
 
 data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzhou','Bengalore','Kolkata','Paris','Bangkok','Cairo','Guatemala City','Johannesburg','London','Mexico City','Nairobi','Santiago','Sao Paulo','Tehran','Las Vegas','Atlanta'],
       'alpha':[0.56, 0.53, 0.54, 0.54, 0.55, 0.52, 0.52 ,0.53, 0.53, 0.52, 0.58, 0.54, 0.55, 0.56, 0.58, 0.51, 0.55, 0.55, 0.56],
@@ -28,7 +31,14 @@ data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzh
 
 data = data.sort_values('City')
 
-for filename in os.listdir(directory):
+
+
+
+
+files = sorted(glob.glob(os.path.join(directory, "output_*.csv")))
+dataframes = [pd.read_csv(f) for f in files]
+
+for filename in sorted(os.scandir(directory), key=lambda e: e.name):
     if filename.endswith(".csv"):
         filepath = os.path.join(directory, filename)
         print(filename)
@@ -50,6 +60,12 @@ for filename in os.listdir(directory):
 data['ratio_1985']=ratio_collection
 data['radius_1985']=radius_collection
 data['LCC_growth _rate']=rate_collection 
+
+
+
+high_kappa=data[data["City"].isin(['Ningbo','Beijing Lafang','Las Vegas','Changzhou','Bengalore','Bangkok','Santiago','Paris','Kolkata','Tehran'])]
+kappa_1=data[data["City"].isin(['Ningbo','Beijing Lafang','Cairo','Changzhou','Las Vegas'])]
+
 
 # Create a color map for cities
 n_cities = len(data)
@@ -370,288 +386,383 @@ plt.show()
 
 # Create a simplified plot without legend for cleaner visualization
 # PLOT 6: Summary plot without legend (cleaner version)
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+# fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
-# Subplot 1: Ratio vs Beta
-ax1 = axes[0, 0]
-for city in data['City']:
+# # Subplot 1: Ratio vs Beta
+# ax1 = axes[0, 0]
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     ax1.scatter(city_data['ratio_1985'], city_data['beta'], 
+#                color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
+# x_fit = np.array([data['ratio_1985'].min(), data['ratio_1985'].max()])
+# ax1.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black', linewidth=2, alpha=0.7)
+# add_city_labels(ax1, data['ratio_1985'], data['beta'], data['City'], fontsize=6)
+# textstr = f'r = {corr_ratio[0,1]:.3f}, ρ = {res_ratio.correlation:.3f}'
+# ax1.text(0.02, 0.98, textstr, transform=ax1.transAxes, fontsize=10,
+#         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+# ax1.set_xlabel('Ratio Area 1985', fontsize=11)
+# ax1.set_ylabel('Beta Exponent', fontsize=11)
+# ax1.set_title('Ratio Area vs Beta', fontsize=12, fontweight='bold')
+# ax1.grid(True, alpha=0.3)
+
+# # Subplot 2: Radius vs Beta
+# ax2 = axes[0, 1]
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     ax2.scatter(city_data['radius_1985'], city_data['beta'], 
+#                color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
+# x_fit = np.array([data['radius_1985'].min(), data['radius_1985'].max()])
+# ax2.plot(x_fit, fit[0]*x_fit+fit[1], '--', color='black', linewidth=2, alpha=0.7)
+# add_city_labels(ax2, data['radius_1985'], data['beta'], data['City'], fontsize=6)
+# textstr = f'r = {corr_radius[0,1]:.3f}, ρ = {res_radius.correlation:.3f}'
+# ax2.text(0.02, 0.98, textstr, transform=ax2.transAxes, fontsize=10,
+#         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+# ax2.set_xlabel('Radius 1985', fontsize=11)
+# ax2.set_ylabel('Beta Exponent', fontsize=11)
+# ax2.set_title('Radius vs Beta', fontsize=12, fontweight='bold')
+# ax2.grid(True, alpha=0.3)
+
+# # Subplot 3: LCC Growth Rate vs Beta
+# ax3 = axes[1, 0]
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     ax3.scatter(city_data['LCC_growth _rate'], city_data['beta'], 
+#                color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
+# x_fit = np.array([data['LCC_growth _rate'].min(), data['LCC_growth _rate'].max()])
+# ax3.plot(x_fit, fit_rate[0]*x_fit+fit_rate[1], '--', color='black', linewidth=2, alpha=0.7)
+# add_city_labels(ax3, data['LCC_growth _rate'], data['beta'], data['City'], fontsize=6)
+# textstr = f'r = {corr_rate[0,1]:.3f}, ρ = {res_rate.correlation:.3f}'
+# ax3.text(0.02, 0.98, textstr, transform=ax3.transAxes, fontsize=10,
+#         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+# ax3.set_xlabel('LCC Growth Rate', fontsize=11)
+# ax3.set_ylabel('Beta Exponent', fontsize=11)
+# ax3.set_title('Growth Rate vs Beta', fontsize=12, fontweight='bold')
+# ax3.grid(True, alpha=0.3)
+
+# # Subplot 4: Radius vs Ratio
+# ax4 = axes[1, 1]
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     ax4.scatter(city_data['radius_1985'], city_data['ratio_1985'], 
+#                color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
+# x_fit = np.array([data['radius_1985'].min(), data['radius_1985'].max()])
+# ax4.plot(x_fit, fit_bonus[0]*x_fit+fit_bonus[1], '--', color='black', linewidth=2, alpha=0.7)
+# add_city_labels(ax4, data['radius_1985'], data['ratio_1985'], data['City'], fontsize=6)
+# textstr = f'r = {corr_bonus[0,1]:.3f}, ρ = {res_nonus.correlation:.3f}'
+# ax4.text(0.02, 0.98, textstr, transform=ax4.transAxes, fontsize=10,
+#         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+# ax4.set_xlabel('Radius 1985', fontsize=11)
+# ax4.set_ylabel('Ratio Area 1985', fontsize=11)
+# ax4.set_title('Radius vs Ratio', fontsize=12, fontweight='bold')
+# ax4.grid(True, alpha=0.3)
+
+
+
+
+plt.figure(figsize=(14, 8))
+fit_ratio=np.polyfit(high_kappa['ratio_1985'],high_kappa['beta'],1)
+
+# Plot points with different colors
+for city in high_kappa['City']:
     city_data = data[data['City'] == city]
-    ax1.scatter(city_data['ratio_1985'], city_data['beta'], 
-               color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
-x_fit = np.array([data['ratio_1985'].min(), data['ratio_1985'].max()])
-ax1.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black', linewidth=2, alpha=0.7)
-add_city_labels(ax1, data['ratio_1985'], data['beta'], data['City'], fontsize=6)
-textstr = f'r = {corr_ratio[0,1]:.3f}, ρ = {res_ratio.correlation:.3f}'
-ax1.text(0.02, 0.98, textstr, transform=ax1.transAxes, fontsize=10,
-        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-ax1.set_xlabel('Ratio Area 1985', fontsize=11)
-ax1.set_ylabel('Beta Exponent', fontsize=11)
-ax1.set_title('Ratio Area vs Beta', fontsize=12, fontweight='bold')
-ax1.grid(True, alpha=0.3)
+    plt.scatter(city_data['ratio_1985'], city_data['beta'], 
+               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
 
-# Subplot 2: Radius vs Beta
-ax2 = axes[0, 1]
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    ax2.scatter(city_data['radius_1985'], city_data['beta'], 
-               color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
-x_fit = np.array([data['radius_1985'].min(), data['radius_1985'].max()])
-ax2.plot(x_fit, fit[0]*x_fit+fit[1], '--', color='black', linewidth=2, alpha=0.7)
-add_city_labels(ax2, data['radius_1985'], data['beta'], data['City'], fontsize=6)
-textstr = f'r = {corr_radius[0,1]:.3f}, ρ = {res_radius.correlation:.3f}'
-ax2.text(0.02, 0.98, textstr, transform=ax2.transAxes, fontsize=10,
-        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-ax2.set_xlabel('Radius 1985', fontsize=11)
-ax2.set_ylabel('Beta Exponent', fontsize=11)
-ax2.set_title('Radius vs Beta', fontsize=12, fontweight='bold')
-ax2.grid(True, alpha=0.3)
+# Plot fit line
+x_fit = np.array([high_kappa['ratio_1985'].min(), high_kappa['ratio_1985'].max()])
+plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
+         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
 
-# Subplot 3: LCC Growth Rate vs Beta
-ax3 = axes[1, 0]
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    ax3.scatter(city_data['LCC_growth _rate'], city_data['beta'], 
-               color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
-x_fit = np.array([data['LCC_growth _rate'].min(), data['LCC_growth _rate'].max()])
-ax3.plot(x_fit, fit_rate[0]*x_fit+fit_rate[1], '--', color='black', linewidth=2, alpha=0.7)
-add_city_labels(ax3, data['LCC_growth _rate'], data['beta'], data['City'], fontsize=6)
-textstr = f'r = {corr_rate[0,1]:.3f}, ρ = {res_rate.correlation:.3f}'
-ax3.text(0.02, 0.98, textstr, transform=ax3.transAxes, fontsize=10,
-        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-ax3.set_xlabel('LCC Growth Rate', fontsize=11)
-ax3.set_ylabel('Beta Exponent', fontsize=11)
-ax3.set_title('Growth Rate vs Beta', fontsize=12, fontweight='bold')
-ax3.grid(True, alpha=0.3)
+# Add city labels
+add_city_labels(plt.gca(), high_kappa['ratio_1985'], high_kappa['beta'], high_kappa['City'])
 
-# Subplot 4: Radius vs Ratio
-ax4 = axes[1, 1]
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    ax4.scatter(city_data['radius_1985'], city_data['ratio_1985'], 
-               color=city_colors[city], s=100, edgecolors='black', linewidth=0.5)
-x_fit = np.array([data['radius_1985'].min(), data['radius_1985'].max()])
-ax4.plot(x_fit, fit_bonus[0]*x_fit+fit_bonus[1], '--', color='black', linewidth=2, alpha=0.7)
-add_city_labels(ax4, data['radius_1985'], data['ratio_1985'], data['City'], fontsize=6)
-textstr = f'r = {corr_bonus[0,1]:.3f}, ρ = {res_nonus.correlation:.3f}'
-ax4.text(0.02, 0.98, textstr, transform=ax4.transAxes, fontsize=10,
-        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-ax4.set_xlabel('Radius 1985', fontsize=11)
-ax4.set_ylabel('Ratio Area 1985', fontsize=11)
-ax4.set_title('Radius vs Ratio', fontsize=12, fontweight='bold')
-ax4.grid(True, alpha=0.3)
 
-plt.suptitle('Urban Morphology Correlations - All Cities', fontsize=14, fontweight='bold', y=1.02)
+corr_ratio_hk=np.corrcoef(high_kappa['ratio_1985'],high_kappa['beta'])
+
+res_ratio_hk= stats.spearmanr(high_kappa['ratio_1985'],high_kappa['beta']) 
+pearson_p_ratio_hk = stats.pearsonr(high_kappa['ratio_1985'],high_kappa['beta'])[1]
+
+# Add correlation statistics as text box
+textstr = f'Pearson r = {corr_ratio_hk[0,1]:.2f} (p = {pearson_p_ratio_hk:.2f})\n' + \
+          f'Spearman ρ = {res_ratio_hk.correlation:.2f} (p = {res_ratio_hk.pvalue:.2f})'
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+        verticalalignment='top', bbox=props)
+
+plt.xlabel(r"$\varphi_{area}$", fontsize=12)
+plt.ylabel(r"$\beta$", fontsize=12)
+plt.title(r"Correlation: $\varphi_{area}$ vs $\beta$", fontsize=14, fontweight='bold')
+plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('all_correlations_summary.png', dpi=300, bbox_inches='tight')
+plt.savefig('high_kappa_ratio_beta.png', dpi=300, bbox_inches='tight')
 plt.show()
 
-# Print correlation analysis results
-print("\n" + "="*80)
-print("--- Correlation Analysis for initial state 1985 ---")
-print("="*80)
-print("\nPEARSON CORRELATION: ")
-print(f'correlation radius vs beta: {corr_radius[0,1]:.4f} (p = {pearson_p_radius:.4f})')
-print(f'correlation ratio vs beta: {corr_ratio[0,1]:.4f} (p = {pearson_p_ratio:.4f})')
-print(f'correlation radius vs ratio: {corr_bonus[0,1]:.4f} (p = {pearson_p_bonus:.4f})')
 
-print("\nSPEARMAN CORRELATION:")
-print(f'correlation radius vs beta: {res_radius.correlation:.4f} (p = {res_radius.pvalue:.4f})')
-print(f'correlation ratio vs beta: {res_ratio.correlation:.4f} (p = {res_ratio.pvalue:.4f})')
-print(f'correlation radius vs ratio: {res_nonus.correlation:.4f} (p = {res_nonus.pvalue:.4f})')
 
-print("\n" + "="*80)
-print("--- Correlation Analysis for LCC growth rate ---")
-print("="*80)
-print("\nPEARSON CORRELATION: ")
-print(f'correlation LCC growth rate vs beta: {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})')
+plt.figure(figsize=(14, 8))
+fit_ratio=np.polyfit(kappa_1['ratio_1985'],kappa_1['beta'],1)
 
-print("\nSPEARMAN CORRELATION:")
-print(f'correlation LCC growth rate vs beta: {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})')
+# Plot points with different colors
+for city in kappa_1['City']:
+    city_data = data[data['City'] == city]
+    plt.scatter(city_data['ratio_1985'], city_data['beta'], 
+               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
 
-# ============================================================================
-# GENERATE OUTPUT FILES
-# ============================================================================
+# Plot fit line
+x_fit = np.array([kappa_1['ratio_1985'].min(), kappa_1['ratio_1985'].max()])
+plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
+         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
 
-def interpret_correlation(rho, p_value):
-    """Interpret correlation strength and significance"""
-    # Strength interpretation
-    abs_rho = abs(rho)
-    if abs_rho < 0.20:
-        strength = "Very weak"
-    elif abs_rho < 0.40:
-        strength = "Weak"
-    elif abs_rho < 0.60:
-        strength = "Moderate"
-    elif abs_rho < 0.80:
-        strength = "Strong"
-    else:
-        strength = "Very strong"
+# Add city labels
+add_city_labels(plt.gca(), kappa_1['ratio_1985'], kappa_1['beta'], kappa_1['City'])
+
+
+corr_ratio_hk=np.corrcoef(kappa_1['ratio_1985'],kappa_1['beta'])
+
+res_ratio_hk= stats.spearmanr(kappa_1['ratio_1985'],kappa_1['beta']) 
+pearson_p_ratio_hk = stats.pearsonr(kappa_1['ratio_1985'],kappa_1['beta'])[1]
+
+# Add correlation statistics as text box
+textstr = f'Pearson r = {corr_ratio_hk[0,1]:.2f} (p = {pearson_p_ratio_hk:.2f})\n' + \
+          f'Spearman ρ = {res_ratio_hk.correlation:.2f} (p = {res_ratio_hk.pvalue:.2f})'
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+        verticalalignment='top', bbox=props)
+
+plt.xlabel(r"$\varphi_{area}$", fontsize=12)
+plt.ylabel(r"$\beta$", fontsize=12)
+plt.title(r"Correlation: $\varphi_{area}$ vs $\beta$", fontsize=14, fontweight='bold')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig('kappa_1_ratio_beta.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # Print correlation analysis results
+# print("\n" + "="*80)
+# print("--- Correlation Analysis for initial state 1985 ---")
+# print("="*80)
+# print("\nPEARSON CORRELATION: ")
+# print(f'correlation radius vs beta: {corr_radius[0,1]:.4f} (p = {pearson_p_radius:.4f})')
+# print(f'correlation ratio vs beta: {corr_ratio[0,1]:.4f} (p = {pearson_p_ratio:.4f})')
+# print(f'correlation radius vs ratio: {corr_bonus[0,1]:.4f} (p = {pearson_p_bonus:.4f})')
+
+# print("\nSPEARMAN CORRELATION:")
+# print(f'correlation radius vs beta: {res_radius.correlation:.4f} (p = {res_radius.pvalue:.4f})')
+# print(f'correlation ratio vs beta: {res_ratio.correlation:.4f} (p = {res_ratio.pvalue:.4f})')
+# print(f'correlation radius vs ratio: {res_nonus.correlation:.4f} (p = {res_nonus.pvalue:.4f})')
+
+# print("\n" + "="*80)
+# print("--- Correlation Analysis for LCC growth rate ---")
+# print("="*80)
+# print("\nPEARSON CORRELATION: ")
+# print(f'correlation LCC growth rate vs beta: {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})')
+
+# print("\nSPEARMAN CORRELATION:")
+# print(f'correlation LCC growth rate vs beta: {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})')
+
+# # ============================================================================
+# # GENERATE OUTPUT FILES
+# # ============================================================================
+
+# def interpret_correlation(rho, p_value):
+#     """Interpret correlation strength and significance"""
+#     # Strength interpretation
+#     abs_rho = abs(rho)
+#     if abs_rho < 0.20:
+#         strength = "Very weak"
+#     elif abs_rho < 0.40:
+#         strength = "Weak"
+#     elif abs_rho < 0.60:
+#         strength = "Moderate"
+#     elif abs_rho < 0.80:
+#         strength = "Strong"
+#     else:
+#         strength = "Very strong"
     
-    # Direction
-    direction = "positive" if rho > 0 else "negative"
+#     # Direction
+#     direction = "positive" if rho > 0 else "negative"
     
-    # Significance
-    if p_value < 0.001:
-        significance = "highly significant (p < 0.001)"
-    elif p_value < 0.01:
-        significance = "very significant (p < 0.01)"
-    elif p_value < 0.05:
-        significance = "significant (p < 0.05)"
-    else:
-        significance = "not significant (p ≥ 0.05)"
+#     # Significance
+#     if p_value < 0.001:
+#         significance = "highly significant (p < 0.001)"
+#     elif p_value < 0.01:
+#         significance = "very significant (p < 0.01)"
+#     elif p_value < 0.05:
+#         significance = "significant (p < 0.05)"
+#     else:
+#         significance = "not significant (p ≥ 0.05)"
     
-    return strength, direction, significance
+#     return strength, direction, significance
 
-# Create formatted text report
-output_text = []
-output_text.append("="*80)
-output_text.append("CORRELATION ANALYSIS REPORT")
-output_text.append("Urban Morphology and Growth Patterns")
-output_text.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-output_text.append("="*80)
-output_text.append("")
-output_text.append(f"Sample size: {len(data)} cities")
-output_text.append("")
-output_text.append("Cities analyzed:")
-for i, city in enumerate(sorted(data['City']), 1):
-    output_text.append(f"  {i:2}. {city}")
-output_text.append("")
+# # Create formatted text report
+# output_text = []
+# output_text.append("="*80)
+# output_text.append("CORRELATION ANALYSIS REPORT")
+# output_text.append("Urban Morphology and Growth Patterns")
+# output_text.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# output_text.append("="*80)
+# output_text.append("")
+# output_text.append(f"Sample size: {len(data)} cities")
+# output_text.append("")
+# output_text.append("Cities analyzed:")
+# for i, city in enumerate(sorted(data['City']), 1):
+#     output_text.append(f"  {i:2}. {city}")
+# output_text.append("")
 
-# Section 1: Initial State Analysis (1985)
-output_text.append("="*80)
-output_text.append("SECTION 1: INITIAL STATE ANALYSIS (1985)")
-output_text.append("="*80)
-output_text.append("")
+# # Section 1: Initial State Analysis (1985)
+# output_text.append("="*80)
+# output_text.append("SECTION 1: INITIAL STATE ANALYSIS (1985)")
+# output_text.append("="*80)
+# output_text.append("")
 
-# Radius vs Beta
-output_text.append("-" * 80)
-output_text.append("1.1 RADIUS vs BETA EXPONENT")
-output_text.append("-" * 80)
-output_text.append(f"  Pearson correlation:   r   = {corr_radius[0,1]:.4f} (p = {pearson_p_radius:.4f})")
-output_text.append(f"  Spearman correlation:  rho = {res_radius.correlation:.4f} (p = {res_radius.pvalue:.4f})")
-strength, direction, significance = interpret_correlation(res_radius.correlation, res_radius.pvalue)
-output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
-output_text.append("")
+# # Radius vs Beta
+# output_text.append("-" * 80)
+# output_text.append("1.1 RADIUS vs BETA EXPONENT")
+# output_text.append("-" * 80)
+# output_text.append(f"  Pearson correlation:   r   = {corr_radius[0,1]:.4f} (p = {pearson_p_radius:.4f})")
+# output_text.append(f"  Spearman correlation:  rho = {res_radius.correlation:.4f} (p = {res_radius.pvalue:.4f})")
+# strength, direction, significance = interpret_correlation(res_radius.correlation, res_radius.pvalue)
+# output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
+# output_text.append("")
 
-# Ratio vs Beta
-output_text.append("-" * 80)
-output_text.append("1.2 RATIO AREA vs BETA EXPONENT")
-output_text.append("-" * 80)
-output_text.append(f"  Pearson correlation:   r   = {corr_ratio[0,1]:.4f} (p = {pearson_p_ratio:.4f})")
-output_text.append(f"  Spearman correlation:  rho = {res_ratio.correlation:.4f} (p = {res_ratio.pvalue:.4f})")
-strength, direction, significance = interpret_correlation(res_ratio.correlation, res_ratio.pvalue)
-output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
-output_text.append("")
+# # Ratio vs Beta
+# output_text.append("-" * 80)
+# output_text.append("1.2 RATIO AREA vs BETA EXPONENT")
+# output_text.append("-" * 80)
+# output_text.append(f"  Pearson correlation:   r   = {corr_ratio[0,1]:.4f} (p = {pearson_p_ratio:.4f})")
+# output_text.append(f"  Spearman correlation:  rho = {res_ratio.correlation:.4f} (p = {res_ratio.pvalue:.4f})")
+# strength, direction, significance = interpret_correlation(res_ratio.correlation, res_ratio.pvalue)
+# output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
+# output_text.append("")
 
-# Radius vs Ratio
-output_text.append("-" * 80)
-output_text.append("1.3 RADIUS vs RATIO AREA")
-output_text.append("-" * 80)
-output_text.append(f"  Pearson correlation:   r   = {corr_bonus[0,1]:.4f} (p = {pearson_p_bonus:.4f})")
-output_text.append(f"  Spearman correlation:  rho = {res_nonus.correlation:.4f} (p = {res_nonus.pvalue:.4f})")
-strength, direction, significance = interpret_correlation(res_nonus.correlation, res_nonus.pvalue)
-output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
-output_text.append("")
+# # Radius vs Ratio
+# output_text.append("-" * 80)
+# output_text.append("1.3 RADIUS vs RATIO AREA")
+# output_text.append("-" * 80)
+# output_text.append(f"  Pearson correlation:   r   = {corr_bonus[0,1]:.4f} (p = {pearson_p_bonus:.4f})")
+# output_text.append(f"  Spearman correlation:  rho = {res_nonus.correlation:.4f} (p = {res_nonus.pvalue:.4f})")
+# strength, direction, significance = interpret_correlation(res_nonus.correlation, res_nonus.pvalue)
+# output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
+# output_text.append("")
 
-# Section 2: Growth Rate Analysis
-output_text.append("="*80)
-output_text.append("SECTION 2: LCC GROWTH RATE ANALYSIS (1985-2015)")
-output_text.append("="*80)
-output_text.append("")
+# # Section 2: Growth Rate Analysis
+# output_text.append("="*80)
+# output_text.append("SECTION 2: LCC GROWTH RATE ANALYSIS (1985-2015)")
+# output_text.append("="*80)
+# output_text.append("")
 
-output_text.append("-" * 80)
-output_text.append("2.1 LCC GROWTH RATE vs BETA EXPONENT")
-output_text.append("-" * 80)
-output_text.append(f"  Pearson correlation:   r   = {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})")
-output_text.append(f"  Spearman correlation:  rho = {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})")
-strength, direction, significance = interpret_correlation(res_rate.correlation, res_rate.pvalue)
-output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
-output_text.append("")
+# output_text.append("-" * 80)
+# output_text.append("2.1 LCC GROWTH RATE vs BETA EXPONENT")
+# output_text.append("-" * 80)
+# output_text.append(f"  Pearson correlation:   r   = {corr_rate[0,1]:.4f} (p = {pearson_p_rate:.4f})")
+# output_text.append(f"  Spearman correlation:  rho = {res_rate.correlation:.4f} (p = {res_rate.pvalue:.4f})")
+# strength, direction, significance = interpret_correlation(res_rate.correlation, res_rate.pvalue)
+# output_text.append(f"  Interpretation:        {strength} {direction} correlation, {significance}")
+# output_text.append("")
 
-# Summary section
-output_text.append("="*80)
-output_text.append("SUMMARY OF FINDINGS")
-output_text.append("="*80)
-output_text.append("")
-output_text.append("Correlation Strength Guidelines (Spearman's ρ):")
-output_text.append("  |ρ| < 0.20    Very weak")
-output_text.append("  0.20-0.39     Weak")
-output_text.append("  0.40-0.59     Moderate")
-output_text.append("  0.60-0.79     Strong")
-output_text.append("  0.80-1.00     Very strong")
-output_text.append("")
-output_text.append("Statistical Significance:")
-output_text.append("  p < 0.05      Statistically significant")
-output_text.append("  p < 0.01      Very significant")
-output_text.append("  p < 0.001     Highly significant")
-output_text.append("")
-output_text.append("="*80)
+# # Summary section
+# output_text.append("="*80)
+# output_text.append("SUMMARY OF FINDINGS")
+# output_text.append("="*80)
+# output_text.append("")
+# output_text.append("Correlation Strength Guidelines (Spearman's ρ):")
+# output_text.append("  |ρ| < 0.20    Very weak")
+# output_text.append("  0.20-0.39     Weak")
+# output_text.append("  0.40-0.59     Moderate")
+# output_text.append("  0.60-0.79     Strong")
+# output_text.append("  0.80-1.00     Very strong")
+# output_text.append("")
+# output_text.append("Statistical Significance:")
+# output_text.append("  p < 0.05      Statistically significant")
+# output_text.append("  p < 0.01      Very significant")
+# output_text.append("  p < 0.001     Highly significant")
+# output_text.append("")
+# output_text.append("="*80)
 
-# Write to text file
-report_text = "\n".join(output_text)
-with open('correlation_analysis_report_clusters.txt', 'w', encoding='utf-8') as f:
-    f.write(report_text)
+# # Write to text file
+# report_text = "\n".join(output_text)
+# with open('correlation_analysis_report_clusters.txt', 'w', encoding='utf-8') as f:
+#     f.write(report_text)
 
-print("\n" + "="*80)
-print("OUTPUT FILES GENERATED:")
-print("="*80)
-print("✓ correlation_analysis_report_clusters.txt - Detailed formatted report")
+# print("\n" + "="*80)
+# print("OUTPUT FILES GENERATED:")
+# print("="*80)
+# print("✓ correlation_analysis_report_clusters.txt - Detailed formatted report")
 
-# Create CSV summary with both Pearson and Spearman p-values
-results_summary = {
-    'Variable_Pair': [
-        'Radius_1985 vs Beta',
-        'Ratio_1985 vs Beta',
-        'Radius_1985 vs Ratio_1985',
-        'LCC_Growth_Rate vs Beta'
-    ],
-    'Pearson_r': [
-        corr_radius[0,1],
-        corr_ratio[0,1],
-        corr_bonus[0,1],
-        corr_rate[0,1]
-    ],
-    'Pearson_p_value': [
-        pearson_p_radius,
-        pearson_p_ratio,
-        pearson_p_bonus,
-        pearson_p_rate
-    ],
-    'Spearman_rho': [
-        res_radius.correlation,
-        res_ratio.correlation,
-        res_nonus.correlation,
-        res_rate.correlation
-    ],
-    'Spearman_p_value': [
-        res_radius.pvalue,
-        res_ratio.pvalue,
-        res_nonus.pvalue,
-        res_rate.pvalue
-    ],
-    'Significant_at_0.05': [
-        'Yes' if res_radius.pvalue < 0.05 else 'No',
-        'Yes' if res_ratio.pvalue < 0.05 else 'No',
-        'Yes' if res_nonus.pvalue < 0.05 else 'No',
-        'Yes' if res_rate.pvalue < 0.05 else 'No'
-    ]
-}
+# # Create CSV summary with both Pearson and Spearman p-values
+# results_summary = {
+#     'Variable_Pair': [
+#         'Radius_1985 vs Beta',
+#         'Ratio_1985 vs Beta',
+#         'Radius_1985 vs Ratio_1985',
+#         'LCC_Growth_Rate vs Beta'
+#     ],
+#     'Pearson_r': [
+#         corr_radius[0,1],
+#         corr_ratio[0,1],
+#         corr_bonus[0,1],
+#         corr_rate[0,1]
+#     ],
+#     'Pearson_p_value': [
+#         pearson_p_radius,
+#         pearson_p_ratio,
+#         pearson_p_bonus,
+#         pearson_p_rate
+#     ],
+#     'Spearman_rho': [
+#         res_radius.correlation,
+#         res_ratio.correlation,
+#         res_nonus.correlation,
+#         res_rate.correlation
+#     ],
+#     'Spearman_p_value': [
+#         res_radius.pvalue,
+#         res_ratio.pvalue,
+#         res_nonus.pvalue,
+#         res_rate.pvalue
+#     ],
+#     'Significant_at_0.05': [
+#         'Yes' if res_radius.pvalue < 0.05 else 'No',
+#         'Yes' if res_ratio.pvalue < 0.05 else 'No',
+#         'Yes' if res_nonus.pvalue < 0.05 else 'No',
+#         'Yes' if res_rate.pvalue < 0.05 else 'No'
+#     ]
+# }
 
-results_df = pd.DataFrame(results_summary)
-results_df.to_csv('correlation_results_summary.csv', index=False)
-print("✓ correlation_results_summary.csv - Tabular summary for further analysis")
-print("✓ 6 PNG figures with city labels and correlation statistics")
-print("  - ratio_vs_beta_correlation_labeled.png")
-print("  - radius_vs_beta_correlation_labeled.png")
-print("  - radius_vs_ratio_correlation_labeled.png")
-print("  - lcc_growth_rate_vs_beta_correlation_labeled.png")
-print("  - beta_vs_lcc_growth_correlation_labeled.png")
-print("  - all_correlations_summary.png (4-panel summary)")
-print("="*80)
+# results_df = pd.DataFrame(results_summary)
+# results_df.to_csv('correlation_results_summary.csv', index=False)
+# print("✓ correlation_results_summary.csv - Tabular summary for further analysis")
+# print("✓ 6 PNG figures with city labels and correlation statistics")
+# print("  - ratio_vs_beta_correlation_labeled.png")
+# print("  - radius_vs_beta_correlation_labeled.png")
+# print("  - radius_vs_ratio_correlation_labeled.png")
+# print("  - lcc_growth_rate_vs_beta_correlation_labeled.png")
+# print("  - beta_vs_lcc_growth_correlation_labeled.png")
+# print("  - all_correlations_summary.png (4-panel summary)")
+# print("="*80)
 
-# Create a data summary CSV with all city data
-city_summary = data[['City', 'alpha', 'beta', '1/z', 'ratio_1985', 'radius_1985', 'LCC_growth _rate']]
-city_summary = city_summary.round(4)
-city_summary.to_csv('city_data_summary.csv', index=False)
-print("✓ city_data_summary.csv - Complete dataset with all city metrics")
-print("="*80)
+# # Create a data summary CSV with all city data
+# city_summary = data[['City', 'alpha', 'beta', '1/z', 'ratio_1985', 'radius_1985', 'LCC_growth _rate']]
+# city_summary = city_summary.round(4)
+# city_summary.to_csv('city_data_summary.csv', index=False)
+# print("✓ city_data_summary.csv - Complete dataset with all city metrics")
+# print("="*80)

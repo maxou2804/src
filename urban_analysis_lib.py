@@ -2148,44 +2148,44 @@ def calculate_lcc_density_metrics(
         filled_ratio = None
         filled_success = False
         filled_error = str(e)
-    # Additional: Analyze non-urbanized clusters inside the LCC perimeter (internal holes)
-    non_urban_clusters = []
-    if filled_success and filled_non_urbanized > 0:
-        print("\n Analyzing internal non-urbanized clusters...")
-        internal_holes_mask = filled_mask & ~lcc_mask
-        labeled_holes, num_holes = ndimage.label(internal_holes_mask)
-        print(f" Found {num_holes} non-urbanized clusters inside LCC")
-        if num_holes > 0:
-            hole_sizes = ndimage.sum(internal_holes_mask, labeled_holes, range(1, num_holes + 1))
-            # Get sorted indices by size descending
-            sorted_indices = np.argsort(hole_sizes)[::-1]
-            # Limit to top 100
-            n_to_analyze = min(100, num_holes)
-            print(f" Analyzing top {n_to_analyze} largest clusters")
-            for rank in range(n_to_analyze):
-                i = sorted_indices[rank] + 1  # Label starts from 1
-                size_pixels = hole_sizes[i-1]
-                area_km2 = size_pixels * pixel_area_km2
-                # Calculate centroid
-                hole_mask = (labeled_holes == i)
-                hole_rows, hole_cols = np.where(hole_mask)
-                if len(hole_rows) > 0:
-                    hole_centroid_row = hole_rows.mean()
-                    hole_centroid_col = hole_cols.mean()
-                    dist_pixels = np.sqrt((hole_centroid_row - lcc_centroid_row)**2 + (hole_centroid_col - lcc_centroid_col)**2)
-                    dist_km = dist_pixels * 0.03  # pixel_size_km = 0.03 km
-                    non_urban_clusters.append({
-                        'area_km2': round(area_km2, 3),
-                        'distance_km': round(dist_km, 3),
-                        'size_pixels': int(size_pixels),
-                        'centroid_row': round(hole_centroid_row, 2),
-                        'centroid_col': round(hole_centroid_col, 2)
-                    })
-            # Already sorted by area descending due to sorted_indices
-            # Print top 5 for brevity
-            print(" Top 5 largest internal clusters:")
-            for idx, cluster in enumerate(non_urban_clusters[:5]):
-                print(f"  Cluster {idx+1}: Area {cluster['area_km2']:.3f} km², Distance {cluster['distance_km']:.3f} km")
+    # # Additional: Analyze non-urbanized clusters inside the LCC perimeter (internal holes)
+    # non_urban_clusters = []
+    # if filled_success and filled_non_urbanized > 0:
+    #     print("\n Analyzing internal non-urbanized clusters...")
+    #     internal_holes_mask = filled_mask & ~lcc_mask
+    #     labeled_holes, num_holes = ndimage.label(internal_holes_mask)
+    #     print(f" Found {num_holes} non-urbanized clusters inside LCC")
+    #     if num_holes > 0:
+    #         hole_sizes = ndimage.sum(internal_holes_mask, labeled_holes, range(1, num_holes + 1))
+    #         # Get sorted indices by size descending
+    #         sorted_indices = np.argsort(hole_sizes)[::-1]
+    #         # Limit to top 100
+    #         n_to_analyze = min(100, num_holes)
+    #         print(f" Analyzing top {n_to_analyze} largest clusters")
+    #         for rank in range(n_to_analyze):
+    #             i = sorted_indices[rank] + 1  # Label starts from 1
+    #             size_pixels = hole_sizes[i-1]
+    #             area_km2 = size_pixels * pixel_area_km2
+    #             # Calculate centroid
+    #             hole_mask = (labeled_holes == i)
+    #             hole_rows, hole_cols = np.where(hole_mask)
+    #             if len(hole_rows) > 0:
+    #                 hole_centroid_row = hole_rows.mean()
+    #                 hole_centroid_col = hole_cols.mean()
+    #                 dist_pixels = np.sqrt((hole_centroid_row - lcc_centroid_row)**2 + (hole_centroid_col - lcc_centroid_col)**2)
+    #                 dist_km = dist_pixels * 0.03  # pixel_size_km = 0.03 km
+    #                 non_urban_clusters.append({
+    #                     'area_km2': round(area_km2, 3),
+    #                     'distance_km': round(dist_km, 3),
+    #                     'size_pixels': int(size_pixels),
+    #                     'centroid_row': round(hole_centroid_row, 2),
+    #                     'centroid_col': round(hole_centroid_col, 2)
+    #                 })
+    #         # Already sorted by area descending due to sorted_indices
+    #         # Print top 5 for brevity
+    #         print(" Top 5 largest internal clusters:")
+    #         for idx, cluster in enumerate(non_urban_clusters[:5]):
+    #             print(f"  Cluster {idx+1}: Area {cluster['area_km2']:.3f} km², Distance {cluster['distance_km']:.3f} km")
     # ========================================================================
     # COMPARISON
     # ========================================================================
@@ -2213,77 +2213,77 @@ def calculate_lcc_density_metrics(
     # ========================================================================
     # VISUALIZATION (Optimized with cropping)
     # ========================================================================
-    print("Visualizing delimitations...")
-    buffer = 10 # Margin around the bounding box for visualization
-    # Define visualization crop bounds
-    vis_row_min = max(0, row_min - buffer)
-    vis_row_max = min(lcc_mask.shape[0] - 1, row_max + buffer)
-    vis_col_min = max(0, col_min - buffer)
-    vis_col_max = min(lcc_mask.shape[1] - 1, col_max + buffer)
-    # Crop lcc_mask
-    cropped_lcc = lcc_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-    # Relative coordinates for bbox
-    rel_row_min = row_min - vis_row_min
-    rel_row_max = row_max - vis_row_min
-    rel_col_min = col_min - vis_col_min
-    rel_col_max = col_max - vis_col_min
-    # Create cropped bbox_mask
-    cropped_bbox_mask = np.zeros_like(cropped_lcc, dtype=bool)
-    cropped_bbox_mask[max(0, rel_row_min):min(cropped_lcc.shape[0], rel_row_max + 1),
-                      max(0, rel_col_min):min(cropped_lcc.shape[1], rel_col_max + 1)] = True
-    # Cropped non-urbanized for bbox
-    cropped_non_urban_bbox = cropped_bbox_mask & ~cropped_lcc.astype(bool)
-    num_subplots = 1
-    if hull_success:
-        num_subplots += 1
-    if filled_success:
-        num_subplots += 1
-    fig, axs = plt.subplots(1, num_subplots, figsize=(10 * num_subplots, 10))
-    if num_subplots == 1:
-        axs = [axs] # Make it iterable
-    subplot_idx = 0
-    # Bounding Box Plot
-    ax_bbox = axs[subplot_idx]
-    ax_bbox.imshow(cropped_lcc, cmap='gray', interpolation='none')
-    ax_bbox.imshow(cropped_non_urban_bbox, cmap='Reds', alpha=0.3, interpolation='none')
-    # Add bounding box rectangle (relative)
-    rect = Rectangle((rel_col_min, rel_row_min), bbox_width, bbox_height, edgecolor='blue', facecolor='none', linewidth=2)
-    ax_bbox.add_patch(rect)
-    ax_bbox.set_title('Bounding Box Delimitation')
-    subplot_idx += 1
-    if hull_success:
-        # Crop hull_mask
-        cropped_hull_mask = hull_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-        # Cropped non-urbanized for hull
-        cropped_non_urban_hull = cropped_hull_mask.astype(bool) & ~cropped_lcc.astype(bool)
-        # Relative hull vertices
-        hull_vertices_rel = hull_vertices.copy()
-        hull_vertices_rel[:, 0] -= vis_col_min # x (col)
-        hull_vertices_rel[:, 1] -= vis_row_min # y (row)
-        # Convex Hull Plot
-        ax_hull = axs[subplot_idx]
-        ax_hull.imshow(cropped_lcc, cmap='gray', interpolation='none')
-        ax_hull.imshow(cropped_non_urban_hull, cmap='Reds', alpha=0.3, interpolation='none')
-        # Add convex hull polygon (relative)
-        poly = Polygon(hull_vertices_rel, edgecolor='blue', facecolor='none', linewidth=2)
-        ax_hull.add_patch(poly)
-        ax_hull.set_title('Convex Hull Delimitation')
-        subplot_idx += 1
-    if filled_success:
-        # Crop filled_mask
-        cropped_filled_mask = filled_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-        # Cropped non-urbanized for filled
-        cropped_non_urban_filled = cropped_filled_mask.astype(bool) & ~cropped_lcc.astype(bool)
-        # Filled Holes Plot
-        ax_filled = axs[subplot_idx]
-        ax_filled.imshow(cropped_lcc, cmap='gray', interpolation='none')
-        ax_filled.imshow(cropped_non_urban_filled, cmap='Reds', alpha=0.3, interpolation='none')
-        # Add contour for filled boundary
-        ax_filled.contour(cropped_filled_mask, levels=[0.5], colors='blue', linewidths=2)
-        ax_filled.set_title('Filled Holes Delimitation')
-    plt.tight_layout()
-    plt.show()
-    # Return comprehensive metrics
+    # print("Visualizing delimitations...")
+    # buffer = 10 # Margin around the bounding box for visualization
+    # # Define visualization crop bounds
+    # vis_row_min = max(0, row_min - buffer)
+    # vis_row_max = min(lcc_mask.shape[0] - 1, row_max + buffer)
+    # vis_col_min = max(0, col_min - buffer)
+    # vis_col_max = min(lcc_mask.shape[1] - 1, col_max + buffer)
+    # # Crop lcc_mask
+    # cropped_lcc = lcc_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    # # Relative coordinates for bbox
+    # rel_row_min = row_min - vis_row_min
+    # rel_row_max = row_max - vis_row_min
+    # rel_col_min = col_min - vis_col_min
+    # rel_col_max = col_max - vis_col_min
+    # # Create cropped bbox_mask
+    # cropped_bbox_mask = np.zeros_like(cropped_lcc, dtype=bool)
+    # cropped_bbox_mask[max(0, rel_row_min):min(cropped_lcc.shape[0], rel_row_max + 1),
+    #                   max(0, rel_col_min):min(cropped_lcc.shape[1], rel_col_max + 1)] = True
+    # # Cropped non-urbanized for bbox
+    # cropped_non_urban_bbox = cropped_bbox_mask & ~cropped_lcc.astype(bool)
+    # num_subplots = 1
+    # if hull_success:
+    #     num_subplots += 1
+    # if filled_success:
+    #     num_subplots += 1
+    # fig, axs = plt.subplots(1, num_subplots, figsize=(10 * num_subplots, 10))
+    # if num_subplots == 1:
+    #     axs = [axs] # Make it iterable
+    # subplot_idx = 0
+    # # Bounding Box Plot
+    # ax_bbox = axs[subplot_idx]
+    # ax_bbox.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    # ax_bbox.imshow(cropped_non_urban_bbox, cmap='Reds', alpha=0.3, interpolation='none')
+    # # Add bounding box rectangle (relative)
+    # rect = Rectangle((rel_col_min, rel_row_min), bbox_width, bbox_height, edgecolor='blue', facecolor='none', linewidth=2)
+    # ax_bbox.add_patch(rect)
+    # ax_bbox.set_title('Bounding Box Delimitation')
+    # subplot_idx += 1
+    # if hull_success:
+    #     # Crop hull_mask
+    #     cropped_hull_mask = hull_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    #     # Cropped non-urbanized for hull
+    #     cropped_non_urban_hull = cropped_hull_mask.astype(bool) & ~cropped_lcc.astype(bool)
+    #     # Relative hull vertices
+    #     hull_vertices_rel = hull_vertices.copy()
+    #     hull_vertices_rel[:, 0] -= vis_col_min # x (col)
+    #     hull_vertices_rel[:, 1] -= vis_row_min # y (row)
+    #     # Convex Hull Plot
+    #     ax_hull = axs[subplot_idx]
+    #     ax_hull.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    #     ax_hull.imshow(cropped_non_urban_hull, cmap='Reds', alpha=0.3, interpolation='none')
+    #     # Add convex hull polygon (relative)
+    #     poly = Polygon(hull_vertices_rel, edgecolor='blue', facecolor='none', linewidth=2)
+    #     ax_hull.add_patch(poly)
+    #     ax_hull.set_title('Convex Hull Delimitation')
+    #     subplot_idx += 1
+    # if filled_success:
+    #     # Crop filled_mask
+    #     cropped_filled_mask = filled_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
+    #     # Cropped non-urbanized for filled
+    #     cropped_non_urban_filled = cropped_filled_mask.astype(bool) & ~cropped_lcc.astype(bool)
+    #     # Filled Holes Plot
+    #     ax_filled = axs[subplot_idx]
+    #     ax_filled.imshow(cropped_lcc, cmap='gray', interpolation='none')
+    #     ax_filled.imshow(cropped_non_urban_filled, cmap='Reds', alpha=0.3, interpolation='none')
+    #     # Add contour for filled boundary
+    #     ax_filled.contour(cropped_filled_mask, levels=[0.5], colors='blue', linewidths=2)
+    #     ax_filled.set_title('Filled Holes Delimitation')
+    # plt.tight_layout()
+    # plt.show()
+    # # Return comprehensive metrics
     result = {
         'year': year,
         'lcc_pixels': int(lcc_size),
@@ -2309,7 +2309,7 @@ def calculate_lcc_density_metrics(
         'filled_urbanized_pixels': int(filled_urbanized),
         'filled_non_urbanized_pixels': int(filled_non_urbanized),
         'filled_non_urbanized_ratio': round(float(filled_ratio), 6) if filled_success else None,
-        'filled_error': filled_error,
-        'filled_non_urban_clusters': non_urban_clusters
+        'filled_error': filled_error
+        # 'filled_non_urban_clusters': non_urban_clusters
     }
     return result

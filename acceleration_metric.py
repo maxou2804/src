@@ -3,7 +3,7 @@ import csv
 from acceleration_metric_function import *
 import matplotlib.pyplot as plt
 from adjustText import adjust_text
-
+from scipy import stats
 
 
 data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing','Changzhou','Bengalore','Kolkata','Paris','Bangkok','Cairo','Guatemala City','Johannesburg','London','Mexico City','Nairobi','Santiago','Sao Paulo','Tehran','Las Vegas','Atlanta'],
@@ -25,39 +25,36 @@ cities=df['City'].tolist()
 
 
 output_directory="outputs_evolution"
-for name in cities:
-    analyze_urban_growth(city_name=name,radius_km=50)
+# for name in cities:
+#     analyze_urban_growth(city_name=name,radius_km=50)
 
 import os, json
 import pandas as pd
 
 path_to_json = '/Users/mika/Documents/DATA/src/output'
 json_files = [pos_json for pos_json in os.listdir(path_to_json) if pos_json.endswith('.json')]
-jsons_data = pd.DataFrame(columns=['city','secondary_urbanization_km2'])
+jsons_data = pd.DataFrame(columns=['city','secondary_urbanization_km2','number_clusters'])
 
 for index, js in enumerate(json_files):
     with open(os.path.join(path_to_json, js)) as json_file:
         json_text = json.load(json_file)
 
-        # here you need to know the layout of your json and each json has to have
-        # the same structure (obviously not the structure I have here)
         city= json_text["city"]
         secondary_urbanized_area= json_text['secondary_urbanization_km2']
         area_lcc_2015=json_text['lcc_2015_area_km2']
         area_lcc_1985=json_text['lcc_1985_in_2015_lcc_km2']
-        
+        number_clusters=json_text['num_clusters_1985']/secondary_urbanized_area
 
         secondary_urbanized_area=secondary_urbanized_area/area_lcc_2015
-      
         # here I push a list of data into a pandas DataFrame at row given by 'index'
-        jsons_data.loc[index] =[city, secondary_urbanized_area]
+        jsons_data.loc[index] =[city, secondary_urbanized_area,number_clusters]
 
 
 
-jsons_data.sort_values('city')
+jsons_data=jsons_data.sort_values('city')
 print(jsons_data)
 
-df.sort_values('City')
+df=df.sort_values('City')
 print(df)
 
 cities=df['City'].tolist()
@@ -66,6 +63,17 @@ plt.figure()
 plt.scatter(jsons_data['secondary_urbanization_km2'],df['beta'])
 texts = [plt.text(jsons_data['secondary_urbanization_km2'].iloc[i],df['beta'].iloc[i], cities[i]) for i in range(len(cities))] 
 adjust_text(texts)
-plt.xlabel('urbanized area in 1985')
+plt.xlabel('secondary urbanized area in 1985')
 plt.ylabel('beta')
 plt.show()
+
+plt.figure()
+plt.scatter(jsons_data['number_clusters'],df['beta'])
+texts = [plt.text(jsons_data['number_clusters'].iloc[i],df['beta'].iloc[i], cities[i]) for i in range(len(cities))] 
+adjust_text(texts)
+plt.xlabel('normalized number of clusters')
+plt.ylabel('beta')
+plt.show()
+
+corr_beta_high=stats.spearmanr(jsons_data['number_clusters'],df['beta'])
+print(corr_beta_high)

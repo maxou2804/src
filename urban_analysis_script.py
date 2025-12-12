@@ -15,13 +15,25 @@ df=pd.DataFrame(data)
 
 cities=df['City'].tolist()
 
+non_urban_clusters=[]
+
+collection_emptiness=pd.DataFrame()
+collection_non_urbanized_clusters=pd.DataFrame()
+
+years=range(1985,2016)
+print(years)
+
+high_kappa_cities=['Beijing','Paris','Las Vegas','Changzhou','Ningbo','Chendu Deyang','Bengalore','Bangkok','Santiago','Kolata']
 
 
-cities=['Bangkok']
+
+
+cities=df['City']
 output_directory="outputs_evolution"
+cities=['Changzhou','Ningbo']
 for name in cities:
 
-    year=2015
+
     radius_factor=5.0
 
 
@@ -48,16 +60,18 @@ for name in cities:
     # )
 
 
-# constraint_mask=extract_constraint_mask(wsf_data=data,year=year,region_type='lcc_region',region_size=1500,center_on_lcc=True,coarse_grain_factor=1,output_csv=f"constraint_mask_{name}.csv")
+    # constraint_mask=extract_constraint_mask(wsf_data=data,year=year,region_type='lcc_region',region_size=1500,center_on_lcc=True,coarse_grain_factor=1,output_csv=f"constraint_mask_{name}.csv")
+    metric_empty=[]
+    for year in years:
 
-
-
-    metrics=calculate_lcc_density_metrics(data,2015,analyzer)
-    metrics_collection.append(metrics['convex_hull_non_urbanized_ratio'])
-    metrics_collection_2.append(metrics['bbox_non_urbanized_ratio'])
-    metrics_collection_3.append(metrics['filled_non_urbanized_ratio'])
-    non_urban_coll.append(metrics['filled_non_urban_clusters'])
-
+        metrics=calculate_lcc_density_metrics(data,year,analyzer)
+        metric_empty.append(metrics['filled_non_urbanized_ratio'])
+        # non_urban_clusters.append(metrics['non_urban_clusters'])
+    # metrics_collection.append(metrics['convex_hull_non_urbanized_ratio'])
+    # metrics_collection_2.append(metrics['bbox_non_urbanized_ratio'])
+    # non_urban_coll.append(metrics['filled_non_urban_clusters'])
+    collection_emptiness[f'{name}']=metric_empty
+    collection_non_urbanized_clusters[f'{name}']=non_urban_clusters
 
 
 # df['metric_hull'] = metrics_collection
@@ -67,4 +81,7 @@ for name in cities:
 
 # urban_clusters_df=pd.DataFrame(non_urban_coll)
 
-# urban_clusters_df.to_csv('non_urban_clusters_metric_1985.csv',index=False)
+collection_emptiness.to_csv('emptiness_bonus_metric.csv',index=False)
+# collection_non_urbanized_clusters.to_csv('non_urban_clusters.csv',index=False)
+
+
