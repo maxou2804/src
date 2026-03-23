@@ -40,7 +40,15 @@ except ImportError:
 
 # ============================================================================
 # NUMBA-OPTIMIZED FUNCTIONS
-# ============================================================================
+# ===
+
+
+
+
+
+
+
+
 
 @jit(nopython=True, cache=True)
 def calculate_overlap_from_labeled_numba(labeled1, labeled2, label1_id, label2_id):
@@ -462,6 +470,7 @@ class BuiltAreaAnalyzer:
         self.years = list(range(1985, 2016))
         self.pixel_area_km2 = (30 * 30) / 1e6  # 30m × 30m pixels
         self.pixel_size_km = 0.03
+
         self.use_numba = use_numba and NUMBA_AVAILABLE
         
         if not self.use_numba and NUMBA_AVAILABLE:
@@ -623,6 +632,16 @@ class BuiltAreaAnalyzer:
             print(f"Extracted {size_km}km × {size_km}km region: {subset.shape}")
         
         return subset, metadata
+
+
+    def latlon_to_pixel(self, lat: float, lon: float, 
+                    transform: rasterio.Affine) -> Tuple[int, int]:
+        
+        from rasterio.transform import rowcol
+        row, col = rowcol(transform, lon, lat)
+        return int(row), int(col)
+    
+
     def extract_year_mask(self, wsf_data: np.ndarray, year: int) -> np.ndarray:
         """Extract binary mask of built areas up to and including a specific year."""
         if self.use_numba:
@@ -669,6 +688,41 @@ class BuiltAreaAnalyzer:
         rows, cols = np.where(lcc_mask == 1)
         distances = np.sqrt((rows - centroid_row)**2 + (cols - centroid_col)**2)
         return float(distances.mean())
+    
+    from typing import Tuple
+    import numpy as np
+    from scipy import ndimage
+
+    def find_city_specific_lcc(
+    self,
+    binary_mask: np.ndarray,
+    center_row: float,
+    center_col: float,
+    max_distance_km: float = 30
+) -> Tuple[np.ndarray, int]:
+
+        if binary_mask.sum() == 0:
+            return binary_mask, 0
+
+        radius_pixels = max_distance_km * 1000 / 30
+
+        cropped, (r0, c0) = crop_around_center(
+            binary_mask, center_row, center_col, radius_pixels
+        )
+
+        lcc_cropped, lcc_size = self.find_largest_connected_component(cropped)
+
+        if lcc_size == 0:
+            return np.zeros_like(binary_mask), 0
+
+        # Paste back into full-size mask
+        lcc_full = np.zeros_like(binary_mask, dtype=np.uint8)
+        lcc_full[r0:r0 + lcc_cropped.shape[0],
+                c0:c0 + lcc_cropped.shape[1]] = lcc_cropped
+
+        return lcc_full, lcc_size
+
+
 
 
 # ============================================================================
@@ -1223,16 +1277,20 @@ def extract_lcc_region(wsf_data: np.ndarray, year: int, region_size: int):
     
     return region_mask, extraction_info
 
-
+# fonction pour tracker les clusters 
 def extract_lcc_and_n_clusters_mask(
     wsf_data: np.ndarray,
     year: int,
+    center_row: int,
+    center_col: int,
+    transform: rasterio.Affine,
     n_clusters: int = 5,
     region_size: int = 1000,
     output_csv: Optional[str] = None,
     coarse_grain_factor: int = 1,
+    analyzer : Optional[BuiltAreaAnalyzer] = None,
     center_lcc: bool = False
-) -> np.ndarray:
+) ->  Tuple[np.ndarray, float]:
     """
     Extract city mask with LCC and n other clusters.
     
@@ -1280,19 +1338,67 @@ def extract_lcc_and_n_clusters_mask(
     print(f"Extracting LCC and Top {n_clusters-1} Clusters for {year}")
     print(f"Region size: {region_size}×{region_size} pixels (~{region_size*0.03:.1f}km)")
     print(f"{'='*60}")
-    
+    urbanized_mask = extract_year_mask_numba(wsf_data, year)
     # Extract region using shared function
     print(f"  Extracting region around LCC...")
-    region_mask, extraction_info = extract_lcc_region(wsf_data, year, region_size)
+    lcc_mask,lcc_size=analyzer.find_city_specific_lcc(wsf_data, center_row,center_col)
     
-    if not extraction_info['lcc_found']:
-        print("  ⚠️  No LCC found, returning empty mask")
-        if output_csv:
-            df = pd.DataFrame(np.zeros((region_size, region_size), dtype=np.uint32))
-            df.to_csv(output_csv, index=False, header=False)
-        return np.zeros((region_size, region_size), dtype=np.uint32)
     
-    print(f"  LCC centroid: {extraction_info['lcc_centroid']}")
+    
+    centroid_row, centroid_col = analyzer.calculate_lcc_centroid(lcc_mask)
+
+    lcc_coords = np.argwhere(lcc_mask)
+    centroid_row = int(np.mean(lcc_coords[:, 0]))
+    centroid_col = int(np.mean(lcc_coords[:, 1]))
+    
+    mean_radius = analyzer.calculate_mean_radius(lcc_mask, centroid_row, centroid_col)
+
+   
+    from rasterio.transform import xy as transform_xy
+    centroid_lon, centroid_lat = transform_xy(
+        transform,
+        centroid_row,
+        centroid_col,
+        offset='center'
+    )
+    print(f"  LCC centroid geographic: lat={centroid_lat:.5f}, lon={centroid_lon:.5f}")
+    # Define square region bounds centered on LCC
+    half_size = region_size // 2
+    row_min = max(0, centroid_row - half_size)
+    row_max = min(urbanized_mask.shape[0], centroid_row + half_size)
+    col_min = max(0, centroid_col - half_size)
+    col_max = min(urbanized_mask.shape[1], centroid_col + half_size)
+    
+    actual_height = row_max - row_min
+    actual_width = col_max - col_min
+    
+    # Extract region
+    region_mask = urbanized_mask[row_min:row_max, col_min:col_max].copy()
+    
+    # Pad to exact square if needed (hit boundary)
+    if actual_height != region_size or actual_width != region_size:
+        padded_mask = np.zeros((region_size, region_size), dtype=np.uint8)
+        padded_mask[:actual_height, :actual_width] = region_mask
+        region_mask = padded_mask
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # region_mask, extraction_info = extract_lcc_region(wsf_data, year, region_size)
+    
+    # if not extraction_info['lcc_found']:
+    #     print("  ⚠️  No LCC found, returning empty mask")
+    #     if output_csv:
+    #         df = pd.DataFrame(np.zeros((region_size, region_size), dtype=np.uint32))
+    #         df.to_csv(output_csv, index=False, header=False)
+    #     return np.zeros((region_size, region_size), dtype=np.uint32)
+    
+    # print(f"  LCC centroid: {extraction_info['lcc_centroid']}")
     
     urbanized_pixels = region_mask.sum()
     print(f"  Urbanized pixels in region: {urbanized_pixels:,}")
@@ -1314,7 +1420,13 @@ def extract_lcc_and_n_clusters_mask(
         sorted_indices = np.argsort(sizes)[::-1]
         sorted_label_ids = label_ids[sorted_indices]
         sorted_sizes = sizes[sorted_indices]
-        
+        # ---- Area ratio: top 10 clusters vs LCC ----
+        lcc_area = sorted_sizes[0]  # largest cluster is LCC
+
+        n_top = min(10, len(sorted_sizes))
+        top_10_area = np.sum(sorted_sizes[:n_top])
+
+        area_ratio_top10_to_lcc = top_10_area / lcc_area if lcc_area > 0 else np.nan
         # Create output mask
         output_mask = np.zeros((region_size, region_size), dtype=np.uint32)
         
@@ -1419,7 +1531,8 @@ def extract_lcc_and_n_clusters_mask(
     print(f"  Final shape: {output_mask.shape}")
     print(f"{'='*60}\n")
     
-    return output_mask
+    return output_mask, area_ratio_top10_to_lcc,lcc_area*pixel_area_km2, mean_radius*pixel_area_km2**0.5, centroid_lon, centroid_lat
+
 
 
 def extract_constraint_mask(
@@ -1591,6 +1704,8 @@ def extract_constraint_mask(
 
 def visualize_clusters_optimized(wsf_data: np.ndarray, 
                                  analyzer: BuiltAreaAnalyzer,
+                                 center_row : int,
+                                 center_col : int,
                                  year: int, 
                                  radius_factor: float,
                                  n_clusters: int,
@@ -1640,8 +1755,9 @@ def visualize_clusters_optimized(wsf_data: np.ndarray,
     mask = analyzer.extract_year_mask(wsf_data, year)
     
     # Get LCC
-    lcc_mask, lcc_size = analyzer.find_largest_connected_component(mask)
-    
+    lcc_mask, lcc_size = analyzer.find_city_specific_lcc(binary_mask=mask,center_row=center_row,center_col=center_col,max_distance_km=80)
+    print(lcc_size)
+    plt.show()
     if lcc_size == 0:
         print("No LCC found")
         return {'success': False, 'error': 'No LCC found'}
@@ -1802,7 +1918,7 @@ def visualize_clusters_optimized(wsf_data: np.ndarray,
         
         # Add LCC in RED (highest priority - on top)
         rgb[lcc_display == 1] = [255, 0, 0]
-        
+      
     else:
         # Fallback to standard numpy indexing
         # Start with BLACK background (0,0,0) - initialize to zeros
@@ -1958,358 +2074,1034 @@ def visualize_clusters_optimized(wsf_data: np.ndarray,
         'total': round(total_time, 3)
     }
     
+        # ---- Area ratio: top 10 clusters / LCC ----
+    lcc_area = cluster_data['lcc']['size_km2']
+
+    # Sum of top 10 clusters INCLUDING LCC
+    n_top = min(10, 1 + len(cluster_data['other_clusters']))
+
+    top_10_area =  sum(c['size_km2'] for c in cluster_data['other_clusters'][:n_top - 1])
+
+    area_ratio_top10_to_lcc = (
+        lcc_area / top_10_area
+        if lcc_area > 0 else np.nan
+    )
+
+    # Store in output dictionary
+    cluster_data['area_ratio_top10_to_lcc'] = round(area_ratio_top10_to_lcc, 4)
+    cluster_data['top_n_for_ratio'] = n_top
+
     if crop_bounds:
         cluster_data['crop_info'] = crop_bounds
     
     cluster_data['image_shape'] = wsf_data.shape
     cluster_data['display_shape'] = mask_display.shape
     
-    return cluster_data
+    return cluster_data, lcc_area
+
+def crop_around_center(mask, center_row, center_col, radius_pixels):
+    r0 = max(0, int(center_row - radius_pixels))
+    r1 = min(mask.shape[0], int(center_row + radius_pixels))
+    c0 = max(0, int(center_col - radius_pixels))
+    c1 = min(mask.shape[1], int(center_col + radius_pixels))
+    return mask[r0:r1, c0:c1], (r0, c0)
+
+
+
+
+
+
+
 
 def calculate_lcc_density_metrics(
     wsf_data: np.ndarray,
     year: int,
-    analyzer: Optional[BuiltAreaAnalyzer] = None
+    center_row: int,
+    center_col: int,
+    analyzer: Optional["BuiltAreaAnalyzer"] = None,
+    min_cluster_size_km2: int = 0
 ) -> Dict:
     """
-    Calculate the ratio of non-urbanized pixels in the LCC region using three methods.
-    Method 1 (Bounding Box): Uses the strict rectangular perimeter (bounding box) of the LCC.
-    Method 2 (Convex Hull): Uses the convex hull (smallest convex polygon) containing the LCC.
-    Method 3 (Filled Holes): Fills internal holes in the LCC to consider only non-urbanized regions inside the LCC.
-    The ratio represents "porosity" or "fragmentation" - how much empty space exists
-    within the urban area's boundary.
+    Calculate LCC density / porosity metrics using:
+    1) Bounding Box
+    2) Convex Hull
+    3) Filled Holes
+
+    Additionally computes statistics on internal non-urbanized clusters,
+    with the option to ignore clusters smaller than a given pixel threshold.
+
     Parameters
     ----------
     wsf_data : np.ndarray
         WSF Evolution data array
     year : int
         Year to analyze
+    center_row, center_col : int
+        City center pixel location
     analyzer : BuiltAreaAnalyzer, optional
-        If provided, uses this analyzer. Otherwise creates a new one.
+        Pre-initialized analyzer
+    min_cluster_size_pixels : int, optional
+        Minimum size (in pixels) of non-urbanized clusters to include.
+        0 keeps all clusters.
+
     Returns
     -------
     dict
-        Dictionary with metrics for all methods:
-        - 'year': year analyzed
-        - 'lcc_pixels': total LCC pixels (urbanized)
-        - 'lcc_area_km2': LCC area in km²
-        Bounding Box metrics:
-        - 'bbox_total_pixels': total pixels in bounding box
-        - 'bbox_urbanized_pixels': urbanized pixels in bbox
-        - 'bbox_non_urbanized_pixels': non-urbanized pixels in bbox
-        - 'bbox_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
-        - 'bbox_bounds': (row_min, row_max, col_min, col_max)
-        Convex Hull metrics:
-        - 'convex_hull_total_pixels': total pixels in convex hull
-        - 'convex_hull_urbanized_pixels': urbanized pixels in hull
-        - 'convex_hull_non_urbanized_pixels': non-urbanized pixels in hull
-        - 'convex_hull_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
-        - 'convex_hull_vertices': number of vertices in hull
-        Filled Holes metrics:
-        - 'filled_total_pixels': total pixels in filled LCC
-        - 'filled_urbanized_pixels': urbanized pixels in filled
-        - 'filled_non_urbanized_pixels': non-urbanized pixels in filled
-        - 'filled_non_urbanized_ratio': ratio of non-urbanized pixels (0-1)
-        - 'filled_non_urban_clusters': list of dicts with {'area_km2': float, 'distance_km': float, 'size_pixels': int, 'centroid_row': float, 'centroid_col': float}
-    Example
-    -------
-    >>> metrics = calculate_lcc_density_metrics(wsf_data, year=2015)
-    >>> print(f"Bbox porosity: {metrics['bbox_non_urbanized_ratio']:.2%}")
-    >>> print(f"Hull porosity: {metrics['convex_hull_non_urbanized_ratio']:.2%}")
-    >>> print(f"Filled porosity: {metrics['filled_non_urbanized_ratio']:.2%}")
+        Dictionary of metrics
     """
-    from scipy.spatial import ConvexHull
-    from skimage.draw import polygon
-    from scipy.ndimage import binary_fill_holes
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Polygon, Rectangle
+
     import numpy as np
-    # Create analyzer if not provided
+    from scipy.spatial import ConvexHull
+    from scipy.ndimage import binary_fill_holes
+    from scipy import ndimage
+    from skimage.draw import polygon
+
+    # ---------------------------------------------------------------------
+    # Initialization
+    # ---------------------------------------------------------------------
     if analyzer is None:
         analyzer = BuiltAreaAnalyzer()
+
+    pixel_area_km2 = 0.03 * 0.03  # 30 m × 30 m
+
     print(f"\n{'='*60}")
     print(f"Calculating LCC Density Metrics for {year}")
     print(f"{'='*60}")
-    # Extract urbanized mask for the year
-    print(" Extracting urbanized areas...")
+
+    # ---------------------------------------------------------------------
+    # Extract urbanized mask
+    # ---------------------------------------------------------------------
     urbanized_mask = analyzer.extract_year_mask(wsf_data, year)
+
     if urbanized_mask.sum() == 0:
-        print(" ⚠️ No urbanized areas found!")
         return {
             'year': year,
-            'lcc_pixels': 0,
-            'lcc_area_km2': 0.0,
-            'bbox_non_urbanized_ratio': None,
-            'convex_hull_non_urbanized_ratio': None,
-            'filled_non_urbanized_ratio': None,
             'error': 'No urbanized areas'
         }
+
+    # ---------------------------------------------------------------------
     # Find LCC
-    print(" Finding largest connected component...")
-    lcc_mask, lcc_size = analyzer.find_largest_connected_component(urbanized_mask)
+    # ---------------------------------------------------------------------
+    lcc_mask, lcc_size = analyzer.find_city_specific_lcc(
+        urbanized_mask,
+        center_row,
+        center_col,
+        max_distance_km=80
+    )
+
     if lcc_size == 0:
-        print(" ⚠️ No LCC found!")
         return {
             'year': year,
-            'lcc_pixels': 0,
-            'lcc_area_km2': 0.0,
-            'bbox_non_urbanized_ratio': None,
-            'convex_hull_non_urbanized_ratio': None,
-            'filled_non_urbanized_ratio': None,
             'error': 'No LCC found'
         }
-    # Calculate LCC centroid
-    lcc_centroid_row, lcc_centroid_col = analyzer.calculate_lcc_centroid(lcc_mask)
-    pixel_area_km2 = 0.03 * 0.03 # 30m × 30m
+
     lcc_area_km2 = lcc_size * pixel_area_km2
-    print(f" LCC size: {lcc_size:,} pixels ({lcc_area_km2:.2f} km²)")
-    print(f" LCC centroid: ({lcc_centroid_row:.2f}, {lcc_centroid_col:.2f})")
-    # Get LCC coordinates
+    lcc_centroid_row, lcc_centroid_col = analyzer.calculate_lcc_centroid(lcc_mask)
+
     lcc_coords = np.argwhere(lcc_mask == 1)
-    # ========================================================================
-    # METHOD 1: BOUNDING BOX (Strict Perimeter)
-    # ========================================================================
-    print("\n Method 1: Bounding Box Analysis")
-    row_min = lcc_coords[:, 0].min()
-    row_max = lcc_coords[:, 0].max()
-    col_min = lcc_coords[:, 1].min()
-    col_max = lcc_coords[:, 1].max()
+
+    # =====================================================================
+    # METHOD 1: BOUNDING BOX
+    # =====================================================================
+    row_min, row_max = lcc_coords[:, 0].min(), lcc_coords[:, 0].max()
+    col_min, col_max = lcc_coords[:, 1].min(), lcc_coords[:, 1].max()
+
     bbox_height = row_max - row_min + 1
     bbox_width = col_max - col_min + 1
     bbox_total_pixels = bbox_height * bbox_width
-    print(f" Bounding box: {bbox_height} × {bbox_width} pixels")
-    print(f" Total bbox pixels: {bbox_total_pixels:,}")
-    # Extract bbox region
+
     bbox_region = lcc_mask[row_min:row_max+1, col_min:col_max+1]
     bbox_urbanized = bbox_region.sum()
     bbox_non_urbanized = bbox_total_pixels - bbox_urbanized
-    bbox_ratio = bbox_non_urbanized / bbox_total_pixels if bbox_total_pixels > 0 else 0.0
-    print(f" Urbanized pixels: {bbox_urbanized:,}")
-    print(f" Non-urbanized pixels: {bbox_non_urbanized:,}")
-    print(f" Non-urbanized ratio: {bbox_ratio:.4f} ({bbox_ratio*100:.2f}%)")
-    # ========================================================================
+    bbox_ratio = bbox_non_urbanized / bbox_total_pixels
+
+    # =====================================================================
     # METHOD 2: CONVEX HULL
-    # ========================================================================
-    print("\n Method 2: Convex Hull Analysis")
-    # Compute convex hull of LCC coordinates
-    # Note: ConvexHull expects (x, y) not (row, col), so we swap
-    points_xy = lcc_coords[:, [1, 0]] # Swap to (col, row) = (x, y)
+    # =====================================================================
+    points_xy = lcc_coords[:, [1, 0]]  # (x, y)
+
     try:
         hull = ConvexHull(points_xy)
         hull_vertices = points_xy[hull.vertices]
-        print(f" Convex hull vertices: {len(hull_vertices)}")
-        # Create binary mask of convex hull region
+
         hull_mask = np.zeros_like(lcc_mask, dtype=np.uint8)
-        # Use polygon to fill the convex hull
-        # polygon expects (row, col) coordinates
         rr, cc = polygon(hull_vertices[:, 1], hull_vertices[:, 0], lcc_mask.shape)
         hull_mask[rr, cc] = 1
+
         hull_total_pixels = hull_mask.sum()
-        # Count urbanized pixels within hull
         hull_urbanized = (hull_mask & lcc_mask).sum()
         hull_non_urbanized = hull_total_pixels - hull_urbanized
-        hull_ratio = hull_non_urbanized / hull_total_pixels if hull_total_pixels > 0 else 0.0
-        print(f" Total hull pixels: {hull_total_pixels:,}")
-        print(f" Urbanized pixels: {hull_urbanized:,}")
-        print(f" Non-urbanized pixels: {hull_non_urbanized:,}")
-        print(f" Non-urbanized ratio: {hull_ratio:.4f} ({hull_ratio*100:.2f}%)")
+        hull_ratio = hull_non_urbanized / hull_total_pixels
+
         hull_success = True
         hull_error = None
+
     except Exception as e:
-        print(f" ⚠️ Convex hull computation failed: {e}")
-        hull_total_pixels = 0
-        hull_urbanized = 0
-        hull_non_urbanized = 0
+        hull_total_pixels = hull_urbanized = hull_non_urbanized = 0
         hull_ratio = None
         hull_vertices = []
         hull_success = False
         hull_error = str(e)
-    # ========================================================================
-    # METHOD 3: FILLED HOLES (Strict Front Considering Internal Non-Urbanized)
-    # ========================================================================
-    print("\n Method 3: Filled Holes Analysis")
+
+    # =====================================================================
+    # METHOD 3: FILLED HOLES
+    # =====================================================================
     try:
         filled_mask = binary_fill_holes(lcc_mask)
+
         filled_total_pixels = filled_mask.sum()
         filled_urbanized = lcc_size
         filled_non_urbanized = filled_total_pixels - filled_urbanized
-        filled_ratio = filled_non_urbanized / filled_total_pixels if filled_total_pixels > 0 else 0.0
-        print(f" Total filled pixels: {filled_total_pixels:,}")
-        print(f" Urbanized pixels: {filled_urbanized:,}")
-        print(f" Non-urbanized pixels: {filled_non_urbanized:,}")
-        print(f" Non-urbanized ratio: {filled_ratio:.4f} ({filled_ratio*100:.2f}%)")
+        filled_ratio = filled_non_urbanized / filled_total_pixels
+
         filled_success = True
         filled_error = None
+
     except Exception as e:
-        print(f" ⚠️ Filled holes computation failed: {e}")
-        filled_total_pixels = 0
-        filled_urbanized = 0
-        filled_non_urbanized = 0
+        filled_total_pixels = filled_urbanized = filled_non_urbanized = 0
         filled_ratio = None
         filled_success = False
         filled_error = str(e)
-    # # Additional: Analyze non-urbanized clusters inside the LCC perimeter (internal holes)
-    # non_urban_clusters = []
-    # if filled_success and filled_non_urbanized > 0:
-    #     print("\n Analyzing internal non-urbanized clusters...")
-    #     internal_holes_mask = filled_mask & ~lcc_mask
-    #     labeled_holes, num_holes = ndimage.label(internal_holes_mask)
-    #     print(f" Found {num_holes} non-urbanized clusters inside LCC")
-    #     if num_holes > 0:
-    #         hole_sizes = ndimage.sum(internal_holes_mask, labeled_holes, range(1, num_holes + 1))
-    #         # Get sorted indices by size descending
-    #         sorted_indices = np.argsort(hole_sizes)[::-1]
-    #         # Limit to top 100
-    #         n_to_analyze = min(100, num_holes)
-    #         print(f" Analyzing top {n_to_analyze} largest clusters")
-    #         for rank in range(n_to_analyze):
-    #             i = sorted_indices[rank] + 1  # Label starts from 1
-    #             size_pixels = hole_sizes[i-1]
-    #             area_km2 = size_pixels * pixel_area_km2
-    #             # Calculate centroid
-    #             hole_mask = (labeled_holes == i)
-    #             hole_rows, hole_cols = np.where(hole_mask)
-    #             if len(hole_rows) > 0:
-    #                 hole_centroid_row = hole_rows.mean()
-    #                 hole_centroid_col = hole_cols.mean()
-    #                 dist_pixels = np.sqrt((hole_centroid_row - lcc_centroid_row)**2 + (hole_centroid_col - lcc_centroid_col)**2)
-    #                 dist_km = dist_pixels * 0.03  # pixel_size_km = 0.03 km
-    #                 non_urban_clusters.append({
-    #                     'area_km2': round(area_km2, 3),
-    #                     'distance_km': round(dist_km, 3),
-    #                     'size_pixels': int(size_pixels),
-    #                     'centroid_row': round(hole_centroid_row, 2),
-    #                     'centroid_col': round(hole_centroid_col, 2)
-    #                 })
-    #         # Already sorted by area descending due to sorted_indices
-    #         # Print top 5 for brevity
-    #         print(" Top 5 largest internal clusters:")
-    #         for idx, cluster in enumerate(non_urban_clusters[:5]):
-    #             print(f"  Cluster {idx+1}: Area {cluster['area_km2']:.3f} km², Distance {cluster['distance_km']:.3f} km")
-    # ========================================================================
-    # COMPARISON
-    # ========================================================================
-    print(f"\n Comparison:")
-    print(f" Bounding box non-urbanized: {bbox_ratio*100:.2f}%")
-    if hull_success:
-        print(f" Convex hull non-urbanized: {hull_ratio*100:.2f}%")
-    if filled_success:
-        print(f" Filled holes non-urbanized: {filled_ratio*100:.2f}%")
-    if hull_success:
-        difference_hull_bbox = abs(bbox_ratio - hull_ratio) * 100
-        print(f" Difference (bbox vs hull): {difference_hull_bbox:.2f} percentage points")
-    if filled_success:
-        difference_filled_bbox = abs(bbox_ratio - filled_ratio) * 100
-        print(f" Difference (bbox vs filled): {difference_filled_bbox:.2f} percentage points")
-        if hull_success:
-            difference_filled_hull = abs(hull_ratio - filled_ratio) * 100
-            print(f" Difference (hull vs filled): {difference_filled_hull:.2f} percentage points")
-    # Interpretation
-    if hull_success and filled_success:
-        if filled_ratio < hull_ratio < bbox_ratio:
-            print(f" → Filled is most compact, then hull, then bbox")
-        # Add more if needed
-    print(f"{'='*60}\n")
-    # ========================================================================
-    # VISUALIZATION (Optimized with cropping)
-    # ========================================================================
-    # print("Visualizing delimitations...")
-    # buffer = 10 # Margin around the bounding box for visualization
-    # # Define visualization crop bounds
-    # vis_row_min = max(0, row_min - buffer)
-    # vis_row_max = min(lcc_mask.shape[0] - 1, row_max + buffer)
-    # vis_col_min = max(0, col_min - buffer)
-    # vis_col_max = min(lcc_mask.shape[1] - 1, col_max + buffer)
-    # # Crop lcc_mask
-    # cropped_lcc = lcc_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-    # # Relative coordinates for bbox
-    # rel_row_min = row_min - vis_row_min
-    # rel_row_max = row_max - vis_row_min
-    # rel_col_min = col_min - vis_col_min
-    # rel_col_max = col_max - vis_col_min
-    # # Create cropped bbox_mask
-    # cropped_bbox_mask = np.zeros_like(cropped_lcc, dtype=bool)
-    # cropped_bbox_mask[max(0, rel_row_min):min(cropped_lcc.shape[0], rel_row_max + 1),
-    #                   max(0, rel_col_min):min(cropped_lcc.shape[1], rel_col_max + 1)] = True
-    # # Cropped non-urbanized for bbox
-    # cropped_non_urban_bbox = cropped_bbox_mask & ~cropped_lcc.astype(bool)
-    # num_subplots = 1
-    # if hull_success:
-    #     num_subplots += 1
-    # if filled_success:
-    #     num_subplots += 1
-    # fig, axs = plt.subplots(1, num_subplots, figsize=(10 * num_subplots, 10))
-    # if num_subplots == 1:
-    #     axs = [axs] # Make it iterable
-    # subplot_idx = 0
-    # # Bounding Box Plot
-    # ax_bbox = axs[subplot_idx]
-    # ax_bbox.imshow(cropped_lcc, cmap='gray', interpolation='none')
-    # ax_bbox.imshow(cropped_non_urban_bbox, cmap='Reds', alpha=0.3, interpolation='none')
-    # # Add bounding box rectangle (relative)
-    # rect = Rectangle((rel_col_min, rel_row_min), bbox_width, bbox_height, edgecolor='blue', facecolor='none', linewidth=2)
-    # ax_bbox.add_patch(rect)
-    # ax_bbox.set_title('Bounding Box Delimitation')
-    # subplot_idx += 1
-    # if hull_success:
-    #     # Crop hull_mask
-    #     cropped_hull_mask = hull_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-    #     # Cropped non-urbanized for hull
-    #     cropped_non_urban_hull = cropped_hull_mask.astype(bool) & ~cropped_lcc.astype(bool)
-    #     # Relative hull vertices
-    #     hull_vertices_rel = hull_vertices.copy()
-    #     hull_vertices_rel[:, 0] -= vis_col_min # x (col)
-    #     hull_vertices_rel[:, 1] -= vis_row_min # y (row)
-    #     # Convex Hull Plot
-    #     ax_hull = axs[subplot_idx]
-    #     ax_hull.imshow(cropped_lcc, cmap='gray', interpolation='none')
-    #     ax_hull.imshow(cropped_non_urban_hull, cmap='Reds', alpha=0.3, interpolation='none')
-    #     # Add convex hull polygon (relative)
-    #     poly = Polygon(hull_vertices_rel, edgecolor='blue', facecolor='none', linewidth=2)
-    #     ax_hull.add_patch(poly)
-    #     ax_hull.set_title('Convex Hull Delimitation')
-    #     subplot_idx += 1
-    # if filled_success:
-    #     # Crop filled_mask
-    #     cropped_filled_mask = filled_mask[vis_row_min:vis_row_max+1, vis_col_min:vis_col_max+1]
-    #     # Cropped non-urbanized for filled
-    #     cropped_non_urban_filled = cropped_filled_mask.astype(bool) & ~cropped_lcc.astype(bool)
-    #     # Filled Holes Plot
-    #     ax_filled = axs[subplot_idx]
-    #     ax_filled.imshow(cropped_lcc, cmap='gray', interpolation='none')
-    #     ax_filled.imshow(cropped_non_urban_filled, cmap='Reds', alpha=0.3, interpolation='none')
-    #     # Add contour for filled boundary
-    #     ax_filled.contour(cropped_filled_mask, levels=[0.5], colors='blue', linewidths=2)
-    #     ax_filled.set_title('Filled Holes Delimitation')
-    # plt.tight_layout()
-    # plt.show()
-    # # Return comprehensive metrics
-    result = {
+
+    # =====================================================================
+    # NON-URBANIZED CLUSTER ANALYSIS (WITH THRESHOLD)
+    # =====================================================================
+    mean_cluster_size_pixels = None
+    mean_cluster_size_km2 = None
+    num_clusters_total = 0
+    num_clusters_kept = 0
+
+    if filled_success and filled_non_urbanized > 0:
+        internal_holes_mask = filled_mask & ~lcc_mask
+
+        labeled_holes, num_holes = ndimage.label(internal_holes_mask)
+        num_clusters_total = int(num_holes)
+
+        if num_holes > 0:
+            hole_sizes = ndimage.sum(
+                internal_holes_mask,
+                labeled_holes,
+                range(1, num_holes + 1)
+            )
+
+            if min_cluster_size_km2 > 0:
+                filtered_sizes = hole_sizes[hole_sizes >= min_cluster_size_km2/(0.03*0.03)]
+            else:
+                filtered_sizes = hole_sizes
+
+            num_clusters_kept = int(len(filtered_sizes))
+
+            if num_clusters_kept > 0:
+                mean_cluster_size_pixels = float(np.mean(filtered_sizes))
+                mean_cluster_size_km2 = mean_cluster_size_pixels * pixel_area_km2
+
+    # =====================================================================
+    # OUTPUT
+    # =====================================================================
+    return {
         'year': year,
+
+        # LCC
         'lcc_pixels': int(lcc_size),
         'lcc_area_km2': round(lcc_area_km2, 3),
+        'lcc_centroid': (round(lcc_centroid_row, 2), round(lcc_centroid_col, 2)),
+
         # Bounding Box
         'bbox_total_pixels': int(bbox_total_pixels),
         'bbox_urbanized_pixels': int(bbox_urbanized),
         'bbox_non_urbanized_pixels': int(bbox_non_urbanized),
         'bbox_non_urbanized_ratio': round(float(bbox_ratio), 6),
         'bbox_bounds': (int(row_min), int(row_max), int(col_min), int(col_max)),
-        'bbox_size_pixels': (int(bbox_height), int(bbox_width)),
+
         # Convex Hull
         'convex_hull_success': hull_success,
         'convex_hull_total_pixels': int(hull_total_pixels),
         'convex_hull_urbanized_pixels': int(hull_urbanized),
         'convex_hull_non_urbanized_pixels': int(hull_non_urbanized),
-        'convex_hull_non_urbanized_ratio': round(float(hull_ratio), 6) if hull_success else None,
+        'convex_hull_non_urbanized_ratio': (
+            round(float(hull_ratio), 6) if hull_success else None
+        ),
         'convex_hull_vertices': len(hull_vertices) if hull_success else 0,
         'convex_hull_error': hull_error,
+
         # Filled Holes
         'filled_success': filled_success,
         'filled_total_pixels': int(filled_total_pixels),
         'filled_urbanized_pixels': int(filled_urbanized),
         'filled_non_urbanized_pixels': int(filled_non_urbanized),
-        'filled_non_urbanized_ratio': round(float(filled_ratio), 6) if filled_success else None,
-        'filled_error': filled_error
-        # 'filled_non_urban_clusters': non_urban_clusters
+        'filled_non_urbanized_ratio': (
+            round(float(filled_ratio), 6) if filled_success else None
+        ),
+        'filled_error': filled_error,
+
+        # Non-urbanized clusters (filtered)
+        'min_cluster_size_pixels': min_cluster_size_km2,
+        'num_non_urban_clusters_total': num_clusters_total,
+        'num_non_urban_clusters_kept': num_clusters_kept,
+        'mean_non_urban_cluster_size_pixels': (
+            round(mean_cluster_size_pixels, 3)
+            if mean_cluster_size_pixels is not None else None
+        ),
+        'mean_non_urban_cluster_size_km2': (
+            round(mean_cluster_size_km2/lcc_area_km2**0.5, 6)
+            if mean_cluster_size_km2 is not None else None
+        )
     }
-    return result
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+############ perimeter shizzle ##############
+
+import sys
+from typing import Tuple
+from rasterio.transform import xy, Affine
+
+
+def extract_perimeter_from_bbox_optimized(data: np.ndarray,
+                                          transform: Affine,
+                                          n_sectors: int = 32,
+                                          use_numba: bool = False) -> pd.DataFrame:
+    """
+    ULTRA-FAST perimeter extraction optimized for large N.
+    
+    Optimizations:
+    - Pre-compute all LCC masks
+    - Vectorized sector assignment
+    - Single-pass processing
+    - Memory-efficient operations
+    
+    Args:
+        data: WSF Evolution array
+        transform: Affine transform
+        n_sectors: Number of sectors (works well even for N=10000!)
+        use_numba: Use numba JIT compilation (even faster)
+    
+    Returns:
+        DataFrame with perimeter points
+    """
+    print(f"\n🚀 ULTRA-FAST PERIMETER EXTRACTION")
+    print(f"  Sectors: {n_sectors:,}")
+    print(f"  Optimization: {'Numba JIT' if use_numba else 'Vectorized'}")
+    print("-" * 70)
+    
+    analyzer = BuiltAreaAnalyzer()
+    
+    # ========================================================================
+    # STEP 1: Calculate 1985 center (only once)
+    # ========================================================================
+    print("\nStep 1: Calculating 1985 center...")
+    mask_1985 = analyzer.extract_year_mask(data, 1985)
+    lcc_1985, size_1985 = analyzer.find_largest_connected_component(mask_1985)
+    
+    if size_1985 == 0:
+        raise ValueError("No LCC found in 1985!")
+    
+    rows_1985, cols_1985 = np.where(lcc_1985 == 1)
+    center_row = float(rows_1985.mean())
+    center_col = float(cols_1985.mean())
+    
+    print(f"  Center: (row={center_row:.2f}, col={center_col:.2f})")
+    
+    # ========================================================================
+    # STEP 2: Pre-compute all LCC masks (memory-efficient)
+    # ========================================================================
+    print("\nStep 2: Pre-computing LCC masks...")
+    
+    years = list(range(1985, 2016))
+    year_masks = {}
+    year_coords = {}
+    
+    for year in years:
+        mask_year = analyzer.extract_year_mask(data, year)
+        lcc_year, size_year = analyzer.find_largest_connected_component(mask_year)
+        
+        if size_year == 0:
+            continue
+        
+        rows, cols = np.where(lcc_year == 1)
+        year_masks[year] = (rows, cols)
+        
+        # Pre-compute angles and distances for this year
+        dx = cols.astype(np.float64) - center_col
+        dy = -(rows.astype(np.float64) - center_row)
+        
+        angles = np.arctan2(dy, dx)
+        angles[angles < 0] += 2 * np.pi
+        distances = np.sqrt(dx**2 + dy**2)
+        
+        year_coords[year] = (rows, cols, angles, distances)
+        
+        print(f"  {year}: {size_year:,} pixels", end='\r')
+    
+    print(f"\n  Pre-computed {len(year_coords)} years")
+    
+    # ========================================================================
+    # STEP 3: Fast sector assignment and perimeter extraction
+    # ========================================================================
+    print(f"\nStep 3: Extracting perimeter for {n_sectors:,} sectors...")
+    
+    # Use the optimized extraction method
+    if use_numba:
+        try:
+            import numba
+            perimeter_data = _extract_with_numba(
+                year_coords, n_sectors, center_row, center_col
+            )
+        except ImportError:
+            print("  Warning: numba not available, using vectorized version")
+            perimeter_data = _extract_vectorized(
+                year_coords, n_sectors, center_row, center_col
+            )
+    else:
+        perimeter_data = _extract_vectorized(
+            year_coords, n_sectors, center_row, center_col
+        )
+    
+    print(f"  Extracted {len(perimeter_data):,} perimeter points")
+    
+    # ========================================================================
+    # STEP 4: Create DataFrame
+    # ========================================================================
+    print("\nStep 4: Creating DataFrame...")
+    df = pd.DataFrame(perimeter_data)
+    
+    # Add geographic coordinates (vectorized)
+    print("  Adding geographic coordinates...")
+    lons, lats = xy(transform, df['row'].values, df['col'].values, offset='center')
+    df['latitude'] = np.array(lats)
+    df['longitude'] = np.array(lons)
+    
+    # Reorder columns
+    df = df[[
+        'year', 'sector', 'sector_angle_deg', 'sector_angle_rad',
+        'row', 'col', 'latitude', 'longitude',
+        'distance_pixels',
+        'actual_angle_deg', 'actual_angle_rad',
+        'center_row', 'center_col'
+    ]]
+    
+    print(f"✓ Complete! {len(df):,} perimeter points")
+    
+    return df
+
+
+def _extract_vectorized(year_coords: dict, 
+                       n_sectors: int,
+                       center_row: float,
+                       center_col: float) -> list:
+    """
+    Vectorized perimeter extraction.
+    
+    Key optimization: Use np.digitize for O(n log k) sector assignment
+    instead of O(n*k) loop-based assignment.
+    """
+    sector_width = 2 * np.pi / n_sectors
+    
+    # Pre-compute sector boundaries
+    sector_boundaries = np.linspace(0, 2*np.pi, n_sectors + 1)
+    
+    all_perimeter_data = []
+    
+    for year, (rows, cols, angles, distances) in year_coords.items():
+        # OPTIMIZATION: Use digitize for fast sector assignment
+        # This is O(n log k) instead of O(n*k)!
+        sector_indices = np.digitize(angles, sector_boundaries) - 1
+        
+        # Handle wrap-around (angles near 2π)
+        sector_indices[sector_indices >= n_sectors] = 0
+        
+        # For each sector, find the point with maximum distance
+        unique_sectors = np.unique(sector_indices)
+        
+        for sector_idx in unique_sectors:
+            # Get points in this sector
+            in_sector = sector_indices == sector_idx
+            
+            # Find max distance point (vectorized argmax)
+            sector_distances = distances[in_sector]
+            local_max_idx = sector_distances.argmax()
+            
+            # Get the actual indices
+            sector_rows = rows[in_sector]
+            sector_cols = cols[in_sector]
+            sector_angles = angles[in_sector]
+            
+            max_row = sector_rows[local_max_idx]
+            max_col = sector_cols[local_max_idx]
+            max_distance = sector_distances[local_max_idx]
+            max_angle = sector_angles[local_max_idx]
+            
+            # Calculate sector center angle
+            sector_center_angle = (sector_idx + 0.5) * sector_width
+            
+            all_perimeter_data.append({
+                'year': year,
+                'sector': int(sector_idx),
+                'sector_angle_rad': sector_center_angle,
+                'sector_angle_deg': np.degrees(sector_center_angle),
+                'row': int(max_row),
+                'col': int(max_col),
+                'distance_pixels': float(max_distance),
+                'actual_angle_rad': float(max_angle),
+                'actual_angle_deg': float(np.degrees(max_angle)),
+                'center_row': center_row,
+                'center_col': center_col
+            })
+    
+    return all_perimeter_data
+
+
+def _extract_with_numba(year_coords: dict,
+                        n_sectors: int,
+                        center_row: float,
+                        center_col: float) -> list:
+    """
+    Numba-optimized extraction (fastest for very large N).
+    
+    Can be 2-3x faster than vectorized version for N > 1000.
+    """
+    try:
+        from numba import jit
+    except ImportError:
+        print("Warning: numba not installed, falling back to vectorized version")
+        return _extract_vectorized(year_coords, n_sectors, center_row, center_col)
+    
+    @jit(nopython=True)
+    def find_max_per_sector(angles, distances, n_sectors):
+        """JIT-compiled function to find max distance per sector"""
+        sector_width = 2 * np.pi / n_sectors
+        
+        # Initialize arrays for max distance and index per sector
+        max_distances = np.full(n_sectors, -1.0)
+        max_indices = np.full(n_sectors, -1, dtype=np.int64)
+        
+        # Single pass through all points
+        for i in range(len(angles)):
+            angle = angles[i]
+            dist = distances[i]
+            
+            # Determine sector
+            sector = int(angle / sector_width)
+            if sector >= n_sectors:
+                sector = n_sectors - 1
+            
+            # Update max if needed
+            if dist > max_distances[sector]:
+                max_distances[sector] = dist
+                max_indices[sector] = i
+        
+        return max_distances, max_indices
+    
+    all_perimeter_data = []
+    sector_width = 2 * np.pi / n_sectors
+    
+    for year, (rows, cols, angles, distances) in year_coords.items():
+        # Use JIT-compiled function
+        max_distances, max_indices = find_max_per_sector(
+            angles.astype(np.float64),
+            distances.astype(np.float64),
+            n_sectors
+        )
+        
+        # Extract results
+        for sector_idx in range(n_sectors):
+            idx = max_indices[sector_idx]
+            if idx >= 0:  # Sector has points
+                sector_center_angle = (sector_idx + 0.5) * sector_width
+                
+                all_perimeter_data.append({
+                    'year': year,
+                    'sector': int(sector_idx),
+                    'sector_angle_rad': sector_center_angle,
+                    'sector_angle_deg': np.degrees(sector_center_angle),
+                    'row': int(rows[idx]),
+                    'col': int(cols[idx]),
+                    'distance_pixels': float(max_distances[sector_idx]),
+                    'actual_angle_rad': float(angles[idx]),
+                    'actual_angle_deg': float(np.degrees(angles[idx])),
+                    'center_row': center_row,
+                    'center_col': center_col
+                })
+    
+    return all_perimeter_data
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+from numba import jit, prange
+from typing import List, Tuple
+
+
+def analyze_sectors_optimized(csv_filename: str, N_sector: List[int], years: np.ndarray) -> np.ndarray:
+    """
+    Analyze distance pixels by sector with optimized performance.
+    
+    For each year, calculate statistics for each N_sector configuration:
+    - Group points by angular position: sector k contains points with angles in [k*2π/n, (k+1)*2π/n)
+    - Calculate mean and std for each angular sector
+    - Average these statistics across all sectors
+    - Repeat for all N_sector values
+    
+    Parameters:
+    -----------
+    csv_filename : str
+        Path to CSV file containing sector data
+    N_sector : List[int]
+        List of sector counts (different angular resolutions to analyze)
+    years : np.ndarray
+        Array of years to analyze
+    
+    Returns:
+    --------
+    np.ndarray
+        Array of shape (2*len(years), len(N_sector)) where:
+        - Row 2*i contains averaged standard deviations for year i
+        - Row 2*i+1 contains averaged mean radii for year i
+        - Each column corresponds to one N_sector configuration
+    """
+    # Read CSV file
+    df = pd.read_csv(csv_filename)
+    
+    # Initialize output array: 2 rows per year (std, mean), one column per N_sector value
+    output = np.full((2 * len(years), len(N_sector)), np.nan)
+    
+    # Process each year
+    for year_idx, year in enumerate(years):
+        # Filter data for current year
+        year_data = df[df['year'] == year]
+        
+        if len(year_data) == 0:
+            continue
+        
+        # Extract relevant columns as numpy arrays
+        distances = year_data['distance_pixels'].values
+        
+        # Get actual angles - try different column names
+        if 'actual_angle_rad' in year_data.columns:
+            angles = year_data['actual_angle_rad'].values
+        elif 'sector_angle_rad' in year_data.columns:
+            angles = year_data['sector_angle_rad'].values
+        else:
+            # Calculate angles from row/col if not available
+            if 'row' in year_data.columns and 'col' in year_data.columns:
+                center_row = year_data['center_row'].iloc[0] if 'center_row' in year_data.columns else year_data['row'].mean()
+                center_col = year_data['center_col'].iloc[0] if 'center_col' in year_data.columns else year_data['col'].mean()
+                
+                dy = year_data['row'].values - center_row
+                dx = year_data['col'].values - center_col
+                angles = np.arctan2(dy, dx)
+                # Normalize to [0, 2π)
+                angles = np.where(angles < 0, angles + 2*np.pi, angles)
+            else:
+                print(f"Warning: No angle information found for year {year}")
+                continue
+        
+        # Process each N_sector configuration
+        for n_idx, n_sectors in enumerate(N_sector):
+            # Pre-calculate angular mask width
+            angular_width = 2 * np.pi / n_sectors
+            
+            # Calculate statistics for this N_sector configuration using optimized function
+            std_vals, mean_vals = compute_sector_stats_by_angle(
+                angles, distances, n_sectors, angular_width
+            )
+            
+            # Average over all sectors (ignoring NaN values)
+            avg_std = np.nanmean(std_vals)
+            avg_mean = np.nanmean(mean_vals)
+            
+            # Store averaged results
+            output[2 * year_idx, n_idx] = avg_std
+            output[2 * year_idx + 1, n_idx] = avg_mean
+    
+    return output
+
+
+@jit(nopython=True, parallel=True)
+def compute_sector_stats_by_angle(angles: np.ndarray, distances: np.ndarray, 
+                                   n_sectors: int, angular_width: float) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute mean and std for each angular sector using Numba optimization.
+    
+    Points are assigned to sectors based on their angular position:
+    - Sector k contains points with angles in [k*angular_width, (k+1)*angular_width)
+    
+    Parameters:
+    -----------
+    angles : np.ndarray
+        Array of angular positions in radians [0, 2π)
+    distances : np.ndarray
+        Array of distance values
+    n_sectors : int
+        Number of angular sectors
+    angular_width : float
+        Width of each sector in radians (2π / n_sectors)
+    
+    Returns:
+    --------
+    Tuple[np.ndarray, np.ndarray]
+        (std_values, mean_values) for each angular sector
+    """
+    std_vals = np.zeros(n_sectors)
+    mean_vals = np.zeros(n_sectors)
+    
+    # Parallel processing of sectors
+    for sector_id in prange(n_sectors):
+        # Define angular bounds for this sector
+        angle_min = sector_id * angular_width
+        angle_max = (sector_id + 1) * angular_width
+        
+        # Find points in this angular sector
+        mask = (angles >= angle_min) & (angles < angle_max)
+        sector_distances = distances[mask]
+        
+        if len(sector_distances) > 0:
+            mean_vals[sector_id] = np.mean(sector_distances)
+            std_vals[sector_id] = np.std(sector_distances)
+        else:
+            mean_vals[sector_id] = np.nan
+            std_vals[sector_id] = np.nan
+    
+    return std_vals, mean_vals
+
+
+@jit(nopython=True, parallel=True)
+def compute_sector_stats(sectors: np.ndarray, distances: np.ndarray, n_sectors: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute mean and std for each sector using Numba optimization.
+    
+    Parameters:
+    -----------
+    sectors : np.ndarray
+        Array of sector indices
+    distances : np.ndarray
+        Array of distance values
+    n_sectors : int
+        Number of sectors
+    
+    Returns:
+    --------
+    Tuple[np.ndarray, np.ndarray]
+        (std_values, mean_values) for each sector
+    """
+    std_vals = np.zeros(n_sectors)
+    mean_vals = np.zeros(n_sectors)
+    
+    # Parallel processing of sectors
+    for sector_id in prange(n_sectors):
+        # Find indices for current sector
+        mask = sectors == sector_id
+        sector_distances = distances[mask]
+        
+        if len(sector_distances) > 0:
+            mean_vals[sector_id] = np.mean(sector_distances)
+            std_vals[sector_id] = np.std(sector_distances)
+        else:
+            mean_vals[sector_id] = np.nan
+            std_vals[sector_id] = np.nan
+    
+    return std_vals, mean_vals
+
+
+def analyze_sectors_vectorized(csv_filename: str, N_sector: List[int], years: np.ndarray) -> np.ndarray:
+    """
+    Fully vectorized version using pandas groupby with angular binning.
+    
+    For each year and each N_sector configuration:
+    - Bin points by angular position: sector k = [k*2π/n, (k+1)*2π/n)
+    - Calculate mean and std for each angular sector
+    - Average these statistics across all sectors
+    
+    Parameters:
+    -----------
+    csv_filename : str
+        Path to CSV file containing sector data
+    N_sector : List[int]
+        List of sector counts (different angular resolutions to analyze)
+    years : np.ndarray
+        Array of years to analyze
+    
+    Returns:
+    --------
+    np.ndarray
+        Array of shape (2*len(years), len(N_sector)) where:
+        - Row 2*i contains averaged standard deviations for year i
+        - Row 2*i+1 contains averaged mean radii for year i
+        - Each column corresponds to one N_sector configuration
+    """
+    # Read CSV file
+    df = pd.read_csv(csv_filename)
+    
+    # Initialize output array
+    output = np.full((2 * len(years), len(N_sector)), np.nan)
+    
+    # Process each year
+    for year_idx, year in enumerate(years):
+        # Filter data for current year
+        year_data = df[df['year'] == year].copy()
+        
+        if len(year_data) == 0:
+            continue
+        
+        # Get actual angles
+        if 'actual_angle_rad' in year_data.columns:
+            angles = year_data['actual_angle_rad'].values
+        elif 'sector_angle_rad' in year_data.columns:
+            angles = year_data['sector_angle_rad'].values
+        else:
+            # Calculate angles from row/col if not available
+            if 'row' in year_data.columns and 'col' in year_data.columns:
+                center_row = year_data['center_row'].iloc[0] if 'center_row' in year_data.columns else year_data['row'].mean()
+                center_col = year_data['center_col'].iloc[0] if 'center_col' in year_data.columns else year_data['col'].mean()
+                
+                dy = year_data['row'].values - center_row
+                dx = year_data['col'].values - center_col
+                angles = np.arctan2(dy, dx)
+                # Normalize to [0, 2π)
+                angles = np.where(angles < 0, angles + 2*np.pi, angles)
+            else:
+                continue
+        
+        year_data['angle'] = angles
+        
+        # Process each N_sector configuration
+        for n_idx, n_sectors in enumerate(N_sector):
+            # Calculate angular width
+            angular_width = 2 * np.pi / n_sectors
+            
+            # Assign each point to an angular sector
+            year_data['angular_sector'] = (angles / angular_width).astype(int)
+            
+            # Handle edge case where angle = 2π maps to sector n_sectors (should be sector 0)
+            year_data.loc[year_data['angular_sector'] >= n_sectors, 'angular_sector'] = n_sectors - 1
+            
+            # Group by angular sector and compute statistics
+            grouped = year_data.groupby('angular_sector')['distance_pixels'].agg(['std', 'mean'])
+            
+            # Average over all sectors
+            avg_std = grouped['std'].mean()
+            avg_mean = grouped['mean'].mean()
+            
+            # Store results
+            output[2 * year_idx, n_idx] = avg_std
+            output[2 * year_idx + 1, n_idx] = avg_mean
+    
+    return output
+
+
+def analyze_sectors_with_mask(csv_filename: str, N_sector: List[int], years: np.ndarray) -> np.ndarray:
+    """
+    Version that pre-calculates angular masks based on 2*pi/N_sector[i].
+    
+    For each year and each N_sector configuration:
+    - Pre-calculate angular width (2π/N_sectors)
+    - Group points by angular position into sectors
+    - Calculate mean and std for each angular sector
+    - Average these statistics across all sectors
+    
+    Parameters:
+    -----------
+    csv_filename : str
+        Path to CSV file containing sector data
+    N_sector : List[int]
+        List of sector counts (different angular resolutions to analyze)
+    years : np.ndarray
+        Array of years to analyze
+    
+    Returns:
+    --------
+    np.ndarray
+        Array of shape (2*len(years), len(N_sector)) where:
+        - Row 2*i contains averaged standard deviations for year i
+        - Row 2*i+1 contains averaged mean radii for year i
+        - Each column corresponds to one N_sector configuration
+    """
+    # Read CSV file
+    df = pd.read_csv(csv_filename)
+    
+    # Initialize output array
+    output = np.full((2 * len(years), len(N_sector)), np.nan)
+    
+    # Process each year
+    for year_idx, year in enumerate(years):
+        # Filter data for current year
+        year_data = df[df['year'] == year]
+        
+        if len(year_data) == 0:
+            continue
+        
+        # Extract distance data
+        distances = year_data['distance_pixels'].values
+        
+        # Get actual angles
+        if 'actual_angle_rad' in year_data.columns:
+            angles = year_data['actual_angle_rad'].values
+        elif 'sector_angle_rad' in year_data.columns:
+            angles = year_data['sector_angle_rad'].values
+        else:
+            # Calculate angles from row/col if not available
+            if 'row' in year_data.columns and 'col' in year_data.columns:
+                center_row = year_data['center_row'].iloc[0] if 'center_row' in year_data.columns else year_data['row'].mean()
+                center_col = year_data['center_col'].iloc[0] if 'center_col' in year_data.columns else year_data['col'].mean()
+                
+                dy = year_data['row'].values - center_row
+                dx = year_data['col'].values - center_col
+                angles = np.arctan2(dy, dx)
+                # Normalize to [0, 2π)
+                angles = np.where(angles < 0, angles + 2*np.pi, angles)
+            else:
+                continue
+        
+        # Process each N_sector configuration
+        for n_idx, n_sectors in enumerate(N_sector):
+            # Pre-calculate angular mask
+            angular_width = 2 * np.pi / n_sectors
+            
+            # Calculate statistics using angular binning
+            std_vals, mean_vals = compute_sector_stats_by_angle(
+                angles, distances, n_sectors, angular_width
+            )
+            
+            # Average over all sectors
+            avg_std = np.nanmean(std_vals)
+            avg_mean = np.nanmean(mean_vals)
+            
+            # Store results
+            output[2 * year_idx, n_idx] = avg_std
+            output[2 * year_idx + 1, n_idx] = avg_mean
+    
+    return output
+def analyze_sectors_fast_vectorized(csv_filename: str, N_sector: List[int], years: np.ndarray) -> np.ndarray:
+    """
+    Highly optimized vectorized version using numpy for angular binning.
+    
+    This version uses vectorized operations throughout for maximum speed.
+    
+    Parameters:
+    -----------
+    csv_filename : str
+        Path to CSV file containing sector data
+    N_sector : List[int]
+        List of sector counts (different angular resolutions to analyze)
+    years : np.ndarray
+        Array of years to analyze
+    
+    Returns:
+    --------
+    np.ndarray
+        Array of shape (2*len(years), len(N_sector))
+    """
+    # Read CSV file once
+    df = pd.read_csv(csv_filename)
+    
+    # Initialize output array
+    output = np.full((2 * len(years), len(N_sector)), np.nan)
+    
+    # Process each year
+    for year_idx, year in enumerate(years):
+        # Filter data for current year
+        year_data = df[df['year'] == year]
+        
+        if len(year_data) == 0:
+            continue
+        
+        # Extract distances
+        distances = year_data['distance_pixels'].values
+        
+        # Get angles
+        if 'actual_angle_rad' in year_data.columns:
+            angles = year_data['actual_angle_rad'].values
+        elif 'sector_angle_rad' in year_data.columns:
+            angles = year_data['sector_angle_rad'].values
+        else:
+            # Calculate angles from row/col
+            if 'row' in year_data.columns and 'col' in year_data.columns:
+                center_row = year_data['center_row'].iloc[0] if 'center_row' in year_data.columns else year_data['row'].mean()
+                center_col = year_data['center_col'].iloc[0] if 'center_col' in year_data.columns else year_data['col'].mean()
+                
+                dy = year_data['row'].values - center_row
+                dx = year_data['col'].values - center_col
+                angles = np.arctan2(dy, dx)
+                angles = np.where(angles < 0, angles + 2*np.pi, angles)
+            else:
+                continue
+        
+        # Process each N_sector configuration
+        for n_idx, n_sectors in enumerate(N_sector):
+            # Calculate angular width
+            angular_width = 2 * np.pi / n_sectors
+            
+            # Assign points to sectors using vectorized operations
+            sector_ids = np.floor(angles / angular_width).astype(int)
+            sector_ids = np.clip(sector_ids, 0, n_sectors - 1)  # Handle edge case
+            
+            # Calculate statistics for each sector using vectorized operations
+            sector_stds = np.zeros(n_sectors)
+            sector_means = np.zeros(n_sectors)
+            
+            for sector_id in range(n_sectors):
+                mask = sector_ids == sector_id
+                sector_distances = distances[mask]
+                
+                if len(sector_distances) > 0:
+                    sector_means[sector_id] = np.mean(sector_distances)
+                    sector_stds[sector_id] = np.std(sector_distances)
+                else:
+                    sector_means[sector_id] = np.nan
+                    sector_stds[sector_id] = np.nan
+            
+            # Average over all sectors
+            output[2 * year_idx, n_idx] = np.nanmean(sector_stds)
+            output[2 * year_idx + 1, n_idx] = np.nanmean(sector_means)
+    
+    return output
+
+
+
+
+
+
+
+
+
+
+
+######## population shizzle ###################
+
+
+
+
+
+    
+
+

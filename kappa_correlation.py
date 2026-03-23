@@ -4,9 +4,9 @@ import numpy as np
 from scipy import stats
 from adjustText import adjust_text
 import matplotlib.cm as cm
+import matplotlib as mpl
 
-
-def add_city_labels_with_adjusttext(ax, x_data, y_data, cities, fontsize=9):
+def add_city_labels_with_adjusttext(ax, x_data, y_data, cities, fontsize=16):
     """Add city labels using adjustText library for automatic overlap avoidance"""
     texts = []
     for x, y, city in zip(x_data, y_data, cities):
@@ -21,7 +21,9 @@ def add_city_labels_with_adjusttext(ax, x_data, y_data, cities, fontsize=9):
                 expand_text=(1.2, 1.5),  # Expand text bounding boxes
                 expand_points=(1.2, 1.2))  # Expand point bounding boxes
 
-add_city_labels = add_city_labels_with_adjusttext
+
+add_city_labels=add_city_labels_with_adjusttext
+
 
 
 data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzhou','Bengalore','Kolkata','Paris','Bangkok','Cairo','Guatemala City','Johannesburg','London','Mexico City','Nairobi','Santiago','Sao Paulo','Tehran','Las Vegas','Atlanta'],
@@ -30,6 +32,13 @@ data=pd.DataFrame({'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzh
        '1/z': [0.58, 0.68, 0.58, 0.56, 0.72, 0.74, 0.76, 0.80, 0.54, 0.33, 0.27, 0.21, 0.25, 0.27, 0.74, 0.41, 0.54, 0.37, 0.52]})
 
 
+mpl.rcParams['xtick.labelsize'] = 16
+mpl.rcParams['ytick.labelsize'] = 16
+mpl.rcParams['axes.labelsize']=16
+mpl.rcParams['legend.fontsize']=16
+
+high_color = "#f28482" 
+low_color = "#4646C0" 
 
 
 kappa=pd.read_csv('kappa.csv')
@@ -38,6 +47,8 @@ print(kappa['0'])
 
 data['kappa']=kappa['0']
 
+supra_linear_data=data[data['kappa']>=1]
+sub_linear_data=data[data['kappa']<1] 
 
 
 # Create a color map for cities
@@ -60,62 +71,77 @@ plt.figure(figsize=(14, 8))
 fit_ratio=np.polyfit(data['kappa'],data['beta'],1)
 
 # Plot points with different colors
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    plt.scatter(city_data['kappa'], city_data['beta'], 
-               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
+plt.scatter(
+    supra_linear_data['kappa'],
+    supra_linear_data["beta"],
+    color=high_color,
+    s=120,
+    edgecolors="black",
+    linewidth=0.7,
+    label="κ \geq 1",
+    zorder=1
+)
+
+plt.scatter(
+    sub_linear_data['kappa'],
+    sub_linear_data["beta"],
+    color=low_color,
+    s=120,
+    edgecolors="black",
+    linewidth=0.7,
+    label="κ<1",
+    zorder=1
+)
 
 # Plot fit line
 x_fit = np.array([data['kappa'].min(), data['kappa'].max()])
 plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
-         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
+         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.3)
 
 # Add city labels
-add_city_labels(plt.gca(), data['kappa'], data['beta'], data['City'])
+add_city_labels_with_adjusttext(plt.gca(), data['kappa'], data['beta'], data['City'])
 
 # Add correlation statistics as text box
 textstr = f'Pearson r = {corr[0,1]:.2f} (p = {pearson_p:.2f})\n' + \
           f'Spearman ρ = {res.correlation:.2f} (p = {res.pvalue:.2f})'
 props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=16,
         verticalalignment='top', bbox=props)
 
-plt.xlabel(r"$\kappa$", fontsize=12)
-plt.ylabel(r"$\beta$", fontsize=12)
-plt.title(r"Correlation: $\kappa$ vs $\beta$", fontsize=14, fontweight='bold')
+plt.xlabel(r"$\kappa$")
+plt.ylabel(r"$\beta$" )
 plt.grid(True, alpha=0.3)
+plt.savefig('beta_vs_kappa.png')
 plt.tight_layout()
-plt.savefig('beta_vs_kappa.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 
 
-plt.figure(figsize=(14, 8))
-fit_ratio=np.polyfit(data['kappa'],data['beta'],1)
+# plt.figure(figsize=(14, 8))
+# fit_ratio=np.polyfit(data['kappa'],data['beta'],1)
 
-# Plot points with different colors
-for city in data['City']:
-    city_data = data[data['City'] == city]
-    plt.scatter(city_data.index,city_data['beta']/city_data['kappa'],
-               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
+# # Plot points with different colors
+# for city in data['City']:
+#     city_data = data[data['City'] == city]
+#     plt.scatter(city_data.index,city_data['beta']/city_data['kappa'],
+#                color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
 
-# Plot fit line
+# # Plot fit line
 
 
-# Add city labels
-add_city_labels(plt.gca(),data.index, data['beta']/data['kappa'], data['City'])
+# # Add city labels
+# add_city_labels(plt.gca(),data.index, data['beta']/data['kappa'], data['City'])
 
-plt.plot(1/3*np.ones((19,1)))
-plt.plot((1/3-0.05)*np.ones((19,1)),'-')
-plt.plot((1/3+0.05)*np.ones((19,1)),'-')
+# plt.plot(1/3*np.ones((19,1)))
+# plt.plot((1/3-0.05)*np.ones((19,1)),'-')
+# plt.plot((1/3+0.05)*np.ones((19,1)),'-')
 
-plt.xlabel(r"$City$", fontsize=12)
-plt.ylabel(r"$\beta / \kappa$", fontsize=12)
-plt.title(r"Corrected $\beta$", fontsize=14, fontweight='bold')
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig('corrected_beta.png', dpi=300, bbox_inches='tight')
-plt.show()
+# plt.xlabel(r"$City$", fontsize=12)
+# plt.ylabel(r"$\beta / \kappa$", fontsize=12)
+# plt.title(r"Corrected $\beta$", fontsize=14, fontweight='bold')
+# plt.grid(True, alpha=0.3)
+# plt.tight_layout()
+# plt.show()
 
 
 

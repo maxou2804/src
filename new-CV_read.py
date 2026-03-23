@@ -1,51 +1,29 @@
 import pandas as pd
-import numpy as np
 from adjustText import adjust_text
+import matplotlib.pyplot as plt
+import numpy as np
+import matplotlib.cm as cm
+from scipy import stats
 import matplotlib as mpl
+from CV_analysis import *
+data=pd.read_csv('/Users/mika/Documents/DATA/src/data_5_CV_new.csv')
 
+print(data)
 
+high_kappa=data[data["City"].isin(['Ningbo','Beijing','Las Vegas','Changzhou','Bengalore','Santiago','Paris','Kolkata','Chengdu Deyang'])]
 mpl.rcParams['xtick.labelsize'] = 16
 mpl.rcParams['ytick.labelsize'] = 16
 mpl.rcParams['axes.labelsize']=16
 mpl.rcParams['legend.fontsize']=16
 
-data={'City': ['Ningbo','Chengdu Deyang', 'Beijing Lafang','Changzhou','Bengalore','Kolkata','Paris','Bangkok','Cairo','Guatemala City','Johannesburg','London','Mexico City','Nairobi','Santiago','Sao Paulo','Tehran','Las Vegas','Atlanta'],
-      'alpha':[0.56, 0.53, 0.54, 0.54, 0.55, 0.52, 0.52 ,0.53, 0.53, 0.52, 0.58, 0.54, 0.55, 0.56, 0.58, 0.51, 0.55, 0.55, 0.56],
-      'beta': [0.44, 0.68, 0.41, 0.37, 0.83, 0.34, 0.56, 1.01, 0.37, 0.37, 0.07, 0.01, 0.04, 0.28, 0.62, 0.89, 0.10, 0.41, 0.04],
-       '1/z': [0.58, 0.68, 0.58, 0.56, 0.72, 0.74, 0.76, 0.80, 0.54, 0.33, 0.27, 0.21, 0.25, 0.27, 0.74, 0.41, 0.54, 0.37, 0.52]}
+# Create a color map for cities
+n_cities = len(data)
+colors = cm.tab20(np.linspace(0, 1, n_cities))  #
+city_colors = {city: colors[i] for i, city in enumerate(data['City'])}
 
-
-
-
-
-df=pd.DataFrame(data)
-
-
-
-df['anisotropy']=[0.3, 0.45, 0.45, 0.25, 0.7, 1.45, 1.7, 0.85, 0.5, 0.7, 0.75,0.82, 0.80, 0.95, 1.05, 0.8, 1.1, 0.5, 1.2 ]
-
-
-high_kappa=df[df["City"].isin(['Ningbo','Beijing Lafang','Las Vegas','Changzhou','Bengalore','Santiago','Paris','Kolkata','Chengdu Deyang'])]
-high_kappa_cities = high_kappa["City"].unique()
-low_kappa = df[~df["City"].isin(high_kappa_cities)]
-
-
-import matplotlib.pyplot as plt
-from scipy import stats
-
-
-
-
-
-
-
-######################### Anisotropy metrics ##############################
-
-
-
-corr_ratio=np.corrcoef(high_kappa['anisotropy'],high_kappa['beta'])
-res_ratio= stats.spearmanr(high_kappa['anisotropy'],high_kappa['beta'])  
-pearson_p_ratio = stats.pearsonr(high_kappa['anisotropy'],high_kappa['beta'])[1]
+corr_ratio=np.corrcoef(high_kappa['CV_mean'],high_kappa['beta'])
+res_ratio= stats.spearmanr(high_kappa['CV_mean'],high_kappa['beta'])  
+pearson_p_ratio = stats.pearsonr(high_kappa['CV_mean'],high_kappa['beta'])[1]
 
 
 
@@ -87,7 +65,9 @@ def add_all_city_labels(ax, x_data, y_data, cities, high_kappa_cities,
         expand_points=(1.2, 1.2)
     )
 
-
+# Split data
+high_kappa_cities = high_kappa["City"].unique()
+low_kappa = data[~data["City"].isin(high_kappa_cities)]
 
 # Colors
 high_color = "#f28482"   # pastel blue (use "#f28482" for pastel red)
@@ -99,7 +79,7 @@ plt.figure(figsize=(14, 8))
 # Plot LOW kappa cities (grey)
 # -------------------------------
 plt.scatter(
-    low_kappa["anisotropy"],
+    low_kappa["CV_mean"],
     low_kappa["beta"],
     color=low_color,
     s=60,
@@ -112,7 +92,7 @@ plt.scatter(
 # Plot HIGH kappa cities (pastel)
 # -------------------------------
 plt.scatter(
-    high_kappa["anisotropy"],
+    high_kappa["CV_mean"],
     high_kappa["beta"],
     color=high_color,
     s=120,
@@ -126,14 +106,14 @@ plt.scatter(
 # Linear fit (HIGH kappa only)
 # -------------------------------
 fit_ratio = np.polyfit(
-    high_kappa["anisotropy"],
+    high_kappa["CV_mean"],
     high_kappa["beta"],
     1
 )
 
 x_fit = np.array([
-    (high_kappa["anisotropy"]).min(),
-    (high_kappa["anisotropy"]).max()
+    (high_kappa["CV_mean"]).min(),
+    (high_kappa["CV_mean"]).max()
 ])
 
 plt.plot(
@@ -151,9 +131,9 @@ plt.plot(
 # -------------------------------
 add_all_city_labels(
     plt.gca(),
-    df["anisotropy"],
-    df["beta"],
-    df["City"],
+    data["CV_mean"],
+    data["beta"],
+    data["City"],
     high_kappa_cities
 )
 
@@ -177,12 +157,15 @@ plt.text(
 # -------------------------------
 # Labels & formatting
 # -------------------------------
-plt.xlabel(r"$\mu(\theta)$" )
+plt.xlabel(r"$\langle{CV}\rangle_{x,y}$" )
 plt.ylabel(r"$\beta$")
 
 plt.grid(True, alpha=0.3)
 plt.legend(frameon=False)
 plt.tight_layout()
-plt.savefig('report_anisotropy_beta_correlation.png')
+plt.savefig('report_CV_mean_correlation.png')
 plt.show()
 
+
+
+plot_cv_heatmap(csv_file='CV_window_5_Bangkok.csv',csv_output='report_CV_heatmap_Bangkok')

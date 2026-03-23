@@ -28,20 +28,23 @@ df_gruyere['area_population']=area_population
 cities=df_gruyere['City'].tolist()
 
 
+df_gruyere=pd.read_csv('/Users/mika/Documents/DATA/src/data_3_CV_report_render.csv')
+
 # Sous ensemble selection
 low_beta=df_gruyere[df_gruyere["City"].isin(['Kolkata','Nairobi','Atlanta','London','Johannesburg','Mexico City','Tehran'])]
 
 high_density=df_gruyere[df_gruyere["City"].isin(['Las Vegas','Paris','Chengdu Deyang','Bangkok'])]
 
-high_kappa=df_gruyere[df_gruyere["City"].isin(['Ningbo','Beijing Lafang','Las Vegas','Changzhou','Bengalore','Bangkok','Santiago','Paris','Kolkata','Tehran'])]
+high_kappa=df_gruyere[df_gruyere["City"].isin(['Ningbo','Beijing','Las Vegas','Changzhou','Bengalore','Bangkok','Santiago','Paris','Kolkata','Tehran','Chengdu Deyang'])]
+high_kappa=df_gruyere[df_gruyere["City"].isin(['Ningbo','Beijing','Las Vegas','Changzhou','Bengalore','Santiago','Paris','Kolkata','Chengdu Deyang'])]
 
 kappa_1=df_gruyere[df_gruyere["City"].isin(['Cairo','Beijing Lafang','Las Vegas', 'Changzhou', 'Ningbo'])]
 
 
 #
-n_cities = len(df_gruyere['City'])
+n_cities = len(high_kappa['City'])
 colors = cm.tab20(np.linspace(0, 1, n_cities))  # Using tab20 colormap for distinct colors
-city_colors = {city: colors[i] for i, city in enumerate(df_gruyere['City'])}
+city_colors = {city: colors[i] for i, city in enumerate(high_kappa['City'])}
 
 # plt.figure()
 # plt.scatter(low_beta['area_population'],low_beta['beta'])
@@ -49,14 +52,22 @@ city_colors = {city: colors[i] for i, city in enumerate(df_gruyere['City'])}
 # plt.ylabel('beta')
 # plt.show()
 
-plt.figure()
-plt.plot(df_gruyere['metric_perimeter'],df_gruyere['beta'],'o')
-plt.ylabel(r'\beta')
-plt.xlabel(r'\frac{A_{non-urb}}/{A_urb}')
-texts = [plt.text(df_gruyere['metric_perimeter'].iloc[i],df_gruyere['beta'].iloc[i], cities[i]) for i in range(len(cities))] 
-adjust_text(texts)
-plt.savefig('metric_perimeter_beta')
-plt.show()
+
+
+
+
+
+
+
+
+# plt.figure()
+# plt.plot(df_gruyere['metric_perimeter'],df_gruyere['beta'],'o')
+# plt.ylabel(r'\beta')
+# plt.xlabel(r'\frac{A_{non-urb}}/{A_urb}')
+# texts = [plt.text(df_gruyere['metric_perimeter'].iloc[i],df_gruyere['beta'].iloc[i], cities[i]) for i in range(len(cities))] 
+# adjust_text(texts)
+# plt.savefig('metric_perimeter_beta')
+# plt.show()
 
 
 def add_city_labels_with_adjusttext(ax, x_data, y_data, cities, fontsize=9):
@@ -81,38 +92,38 @@ add_city_labels=add_city_labels_with_adjusttext
 
 # PLOT 1: metric perimeter vs Beta
 plt.figure(figsize=(14, 8))
-fit_ratio=np.polyfit(df_gruyere['metric_perimeter'],df_gruyere['beta'],1)
+fit_ratio=np.polyfit(high_kappa['metric_perimeter'],high_kappa['beta'],1)
 
 # Plot points with different colors
-for city in df_gruyere['City']:
-    city_data = df_gruyere[df_gruyere['City'] == city]
+for city in high_kappa['City']:
+    city_data = high_kappa[high_kappa['City'] == city]
     plt.scatter(city_data['metric_perimeter'], city_data['beta'], 
                color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
 
 # Plot fit line
-x_fit = np.array([df_gruyere['metric_perimeter'].min(), df_gruyere['metric_perimeter'].max()])
+x_fit = np.array([high_kappa['metric_perimeter'].min(), high_kappa['metric_perimeter'].max()])
 plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
          label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
 
 # Add city labels
-add_city_labels(plt.gca(), df_gruyere['metric_perimeter'], df_gruyere['beta'], df_gruyere['City'])
+add_city_labels(plt.gca(), high_kappa['metric_perimeter'], high_kappa['beta'], high_kappa['City'])
 
 # Add correlation statistics as text box
-corr_metric_perimeter=np.corrcoef(df_gruyere['metric_perimeter'],df_gruyere['beta'])
-res_spearman_metric_perimeter=stats.spearmanr(df_gruyere['metric_perimeter'],df_gruyere['beta'])
-res_pearson_metric_perimeter = stats.pearsonr(df_gruyere['metric_perimeter'],df_gruyere['beta'])
+corr_metric_perimeter=np.corrcoef(high_kappa['metric_perimeter'],high_kappa['beta'])
+res_spearman_metric_perimeter=stats.spearmanr(high_kappa['metric_perimeter'],high_kappa['beta'])
+res_pearson_metric_perimeter = stats.pearsonr(high_kappa['metric_perimeter'],high_kappa['beta'])
 textstr = f'Pearson r = {res_pearson_metric_perimeter[0]:.2f} (p = {res_pearson_metric_perimeter[1]:.2f})\n' + \
           f'Spearman ρ = {res_spearman_metric_perimeter.correlation:.2f} (p = {res_spearman_metric_perimeter.pvalue:.2f})'
 props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
 plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
         verticalalignment='top', bbox=props)
 
-plt.xlabel(r"$A_{non-urb}/A_{urb}$", fontsize=12)
-plt.ylabel(r"$\beta$", fontsize=12)
+plt.xlabel(r"$A_{non-urb}/A_{urb}$", fontsize=16)
+plt.ylabel(r"$\beta$", fontsize=16)
 plt.title(r"Correlation: $A_{non-urb}/A_{urb}$ vs $\beta$ within the front of LCC", fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('metric_perimeter_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
+# plt.savefig('metric_perimeter_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 
@@ -149,7 +160,7 @@ plt.ylabel(r"$\beta$", fontsize=12)
 plt.title(r"Correlation: $A_{non-urb}/A_{urb}$ vs $\beta$ within the hull of LCC ", fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('metric_hull_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
+# plt.savefig('metric_hull_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
 plt.show()
 # PLOT 3: bbox vs Beta
 plt.figure(figsize=(14, 8))
@@ -184,7 +195,7 @@ plt.ylabel(r"$\beta$", fontsize=12)
 plt.title(r"Correlation: $A_{non-urb}/A_{urb}$ vs $\beta$ within the rectangle of LCC ", fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('metric_bbox_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
+# plt.savefig('metric_bbox_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 
@@ -203,7 +214,7 @@ plt.xlabel('area/population')
 plt.ylabel('beta')
 texts = [plt.text(area_population[i],df_gruyere['beta'].iloc[i], cities[i]) for i in range(len(cities))] 
 adjust_text(texts)
-plt.savefig('densities_beta')
+# plt.savefig('densities_beta')
 plt.show()
 
 
@@ -226,17 +237,13 @@ plt.show()
 
 
 
-plt.figure()
-plt.scatter(high_kappa['metric_perimeter'],high_kappa['beta'])
-plt.xlabel('constraint density')
-plt.ylabel('beta')
-plt.show()
 
-plt.figure()
-plt.scatter(kappa_1['metric_perimeter'],high_kappa['beta'])
-plt.xlabel('constraint density')
-plt.ylabel('beta')
-plt.show()
+
+# plt.figure()
+# plt.scatter(kappa_1['metric_perimeter'],high_kappa['beta'])
+# plt.xlabel('constraint density')
+# plt.ylabel('beta')
+# plt.show()
 
 
 corr_beta_high=stats.spearmanr(high_kappa['beta'],high_kappa['metric_perimeter'])
@@ -255,6 +262,85 @@ print(corr_beta_densities)
 
 
 
+
+
+
+# PLOT 2: hull vs Beta
+plt.figure(figsize=(14, 8))
+fit_ratio=np.polyfit((np.ones((len(df_gruyere)))-df_gruyere['metric_hull'])/df_gruyere['metric_hull'],df_gruyere['beta'],1)
+
+# Plot points with different colors
+for city in df_gruyere['City']:
+    city_data = df_gruyere[df_gruyere['City'] == city]
+    plt.scatter((np.ones((len(city_data['metric_hull'])))-city_data['metric_hull'])/city_data['metric_hull'], city_data['beta'], 
+               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
+
+# Plot fit line
+x_fit = np.array([df_gruyere['metric_hull'].min(), df_gruyere['metric_hull'].max()])
+plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
+         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
+
+# Add city labels
+add_city_labels(plt.gca(),(np.ones((len(df_gruyere)))-df_gruyere['metric_hull'])/df_gruyere['metric_hull'], df_gruyere['beta'], df_gruyere['City'])
+
+# Add correlation statistics as text box
+corr_metric_perimeter=np.corrcoef((np.ones((len(df_gruyere)))-df_gruyere['metric_hull'])/df_gruyere['metric_hull'],df_gruyere['beta'])
+res_spearman_metric_perimeter=stats.spearmanr((np.ones((len(df_gruyere)))-df_gruyere['metric_hull'])/df_gruyere['metric_hull'],df_gruyere['beta'])
+res_pearson_metric_perimeter = stats.pearsonr((np.ones((len(df_gruyere)))-df_gruyere['metric_hull'])/df_gruyere['metric_hull'],df_gruyere['beta'])
+textstr = f'Pearson r = {res_pearson_metric_perimeter[0]:.2f} (p = {res_pearson_metric_perimeter[1]:.2f})\n' + \
+          f'Spearman ρ = {res_spearman_metric_perimeter.correlation:.2f} (p = {res_spearman_metric_perimeter.pvalue:.2f})'
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+        verticalalignment='top', bbox=props)
+
+plt.xlabel(r"A_second_urb/A_holes", fontsize=12)
+plt.ylabel(r"$\beta$", fontsize=12)
+plt.title(r"Correlation: $A_{non-urb}/A_{urb}$ vs $\beta$ within the hull of LCC ", fontsize=14, fontweight='bold')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+# plt.savefig('A_second_A_hole_vs_beta_correlation_labeled.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+
+
+
+
+
+
+plt.figure(figsize=(14, 8))
+fit_ratio=np.polyfit(high_kappa['metric_hull'],high_kappa['beta'],1)
+
+# Plot points with different colors
+for city in high_kappa['City']:
+    city_data = high_kappa[high_kappa['City'] == city]
+    plt.scatter(city_data['metric_hull'], city_data['beta'], 
+               color=city_colors[city], s=100, label=city, edgecolors='black', linewidth=0.5)
+
+# Plot fit line
+x_fit = np.array([high_kappa['metric_hull'].min(), high_kappa['metric_hull'].max()])
+plt.plot(x_fit, fit_ratio[0]*x_fit+fit_ratio[1], '--', color='black',
+         label=f'Linear fit: y={fit_ratio[0]:.2f}x + {fit_ratio[1]:.2f}', linewidth=2, alpha=0.7)
+
+# Add city labels
+add_city_labels(plt.gca(),high_kappa['metric_hull'], high_kappa['beta'], high_kappa['City'])
+
+# Add correlation statistics as text box
+corr_metric_perimeter=np.corrcoef(high_kappa['metric_hull'],high_kappa['beta'])
+res_spearman_metric_perimeter=stats.spearmanr(high_kappa['metric_hull'],high_kappa['beta'])
+res_pearson_metric_perimeter = stats.pearsonr(high_kappa['metric_hull'],high_kappa['beta'])
+textstr = f'Pearson r = {res_pearson_metric_perimeter[0]:.2f} (p = {res_pearson_metric_perimeter[1]:.2f})\n' + \
+          f'Spearman ρ = {res_spearman_metric_perimeter.correlation:.2f} (p = {res_spearman_metric_perimeter.pvalue:.2f})'
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
+        verticalalignment='top', bbox=props)
+
+plt.xlabel(r"$A_{non-urb}$", fontsize=12)
+plt.ylabel(r"$\beta$", fontsize=12)
+plt.title(r"Correlation: $A_{non-urb}$ vs $\beta$ within the hull of LCC ", fontsize=14, fontweight='bold')
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+# plt.savefig('high_kappa_hull_metric', dpi=300, bbox_inches='tight')
+plt.show()
 
 
 

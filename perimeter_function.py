@@ -6,7 +6,7 @@ from typing import Tuple
 from rasterio.transform import xy, Affine
 
 sys.path.insert(0, str(Path(__file__).parent))
-from wsf_evolution_lcc import BuiltAreaAnalyzer
+from urban_analysis_script import BuiltAreaAnalyzer
 from numba import jit, prange
 from typing import List, Tuple
 

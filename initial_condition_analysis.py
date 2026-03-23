@@ -35,13 +35,13 @@ data = data.sort_values('City')
 
 
 
-files = sorted(glob.glob(os.path.join(directory, "output_*.csv")))
-dataframes = [pd.read_csv(f) for f in files]
+file_list = sorted(glob.glob(os.path.join(directory, "output_*.csv")))
 
-for filename in sorted(os.scandir(directory), key=lambda e: e.name):
-    if filename.endswith(".csv"):
-        filepath = os.path.join(directory, filename)
-        print(filename)
+
+for files in file_list:
+    if files.endswith(".csv"):
+        filepath = os.path.join(directory, files)
+        print(files)
         pandas_df=pd.read_csv(filepath)
         df=pd.DataFrame(pandas_df)
         area_init=df.loc[df['year'] == 1985,'area_km2']
@@ -63,7 +63,7 @@ data['LCC_growth _rate']=rate_collection
 
 
 
-high_kappa=data[data["City"].isin(['Ningbo','Beijing Lafang','Las Vegas','Changzhou','Bengalore','Bangkok','Santiago','Paris','Kolkata','Tehran'])]
+high_kappa=data[data["City"].isin(['Ningbo','Beijing Lafang','Las Vegas','Changzhou','Bengalore','Bangkok','Santiago','Paris','Kolkata','Tehran','Chengdu Deyang'])]
 kappa_1=data[data["City"].isin(['Ningbo','Beijing Lafang','Cairo','Changzhou','Las Vegas'])]
 
 
@@ -489,8 +489,8 @@ props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
 plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
         verticalalignment='top', bbox=props)
 
-plt.xlabel(r"$\varphi_{area}$", fontsize=12)
-plt.ylabel(r"$\beta$", fontsize=12)
+plt.xlabel(r"$\varphi_{area}$", fontsize=16)
+plt.ylabel(r"$\beta$", fontsize=16)
 plt.title(r"Correlation: $\varphi_{area}$ vs $\beta$", fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
@@ -529,8 +529,8 @@ props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
 plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=11,
         verticalalignment='top', bbox=props)
 
-plt.xlabel(r"$\varphi_{area}$", fontsize=12)
-plt.ylabel(r"$\beta$", fontsize=12)
+plt.xlabel(r"$\varphi_{area}$", fontsize=16)
+plt.ylabel(r"$\beta$", fontsize=16)
 plt.title(r"Correlation: $\varphi_{area}$ vs $\beta$", fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
